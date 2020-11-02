@@ -52,10 +52,46 @@ class HTTPControl:
 
 class HTTPControlHandler(BaseHTTPRequestHandler):
 
+    ampsList = []
     fields = {}
+    hoursDurationList = []
+    timeList = []
     path = ""
     post_data = ""
     version = "v1.2.1"
+
+    def __init__(self, *args, **kwargs):
+        BaseHTTPRequestHandler.__init__(self, *args, **kwargs)
+
+        # Populate ampsList so that any function which requires a list of supported
+        # TWC amps can easily access it
+        if not len(self.ampsList):
+            self.ampsList.append([0, "Disabled"])
+            for amp in range(5, (self.server.master.config["config"].get("wiringMaxAmpsPerTWC", 5)) + 1):
+                self.ampsList.append([amp, str(amp) + "A"])
+
+        # Populate list of hours
+        if not len(self.hoursDurationList):
+            for hour in range(1, 25):
+                self.hoursDurationList.append([(hour * 3600), str(hour) + "h"])
+
+        if not len(self.timeList):
+            for hour in range(0, 24):
+                for mins in [0, 15, 30, 45]:
+                    strHour = str(hour)
+                    strMins = str(mins)
+                    if hour < 10:
+                        strHour = "0" + str(hour)
+                    if mins < 10:
+                        strMins = "0" + str(mins)
+                    self.timeList.append([strHour + ":" + strMins, strHour + ":" + strMins])
+
+    def checkBox(self, name, value):
+        cb = "<input type=checkbox name='" + name + "'"
+        if value:
+            cb += " checked"
+        cb += ">"
+        return cb
 
     def do_bootstrap(self):
         page = """
@@ -76,23 +112,31 @@ class HTTPControlHandler(BaseHTTPRequestHandler):
         return page
 
     def do_chargeSchedule(self):
+        schedule = [ "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" ]
+        settings = self.server.master.settings.get("Schedule", {})
+
         page = """
-    <table class='table table-sm'>
-      <thead>
-        <th scope='col'>&nbsp;</th>
-        <th scope='col'>Sun</th>
-        <th scope='col'>Mon</th>
-        <th scope='col'>Tue</th>
-        <th scope='col'>Wed</th>
-        <th scope='col'>Thu</th>
-        <th scope='col'>Fri</th>
-        <th scope='col'>Sat</th>
-      </thead>
-      <tbody>"""
+        <table class='table table-sm'>
+          <thead>
+            <th scope='col'>&nbsp;</th>
+        """
+        for day in schedule:
+            page += "<th scope='col'>" + day[:3] + "</th>"
+        page += """
+          </thead>
+          <tbody>
+        """
         for i in (x for y in (range(6, 24), range(0, 6)) for x in y):
             page += "<tr><th scope='row'>%02d</th>" % (i)
-            for day in range(0, 6):
-                page += "<td>&nbsp;</td>"
+            for day in schedule:
+                today = settings.get(day, {})
+                if (today.get("enabled", None)
+                   and (int(today.get("start", 0)[:2]) >= i)
+                   and (int(today.get("end", 0)[:2]) <= i)):
+                    page += "<td>E</td>"
+                else:
+                    page += "<td>" + today.get("start", 0)[:2] + " " + today.get("end", 0)[:2] + "</td>"
+                    #page += "<td>&nbsp;</td>"
             page += "</tr>"
         page += "</tbody>"
         page += "</table>"
@@ -501,16 +545,90 @@ class HTTPControlHandler(BaseHTTPRequestHandler):
         page += "<body>"
         page += self.do_navbar()
         page += """
-        <table>
-          <tr>
-            <td><b>Resume tracking green energy at:</b></td>
-            <td><select name = 'resumeGreenEnergy'>
+        <form method=POST action='/schedule/save'>
+        <table width = 100%>
+          <tr width = 100%>
+            <td width = 50%>
+              <table>
+                <tr valign="top">
+                  <td colspan = 2><b>Charge Schedule Settings:</b>
+                </tr>
+                <tr>
+                  <td><b>Resume tracking green energy at:</b></td>
+                  <td>
         """
-        for hr in range(0, 24):
-            page += "<option value = ''>" + str(hr) + "</option>"
+        page += self.optionList(self.timeList, 
+            {
+              "name": "resumeGreenEnergy",
+              "value": self.server.master.settings.get("resumeGreenEnergy", "00:00"),
+            })
         page += """
-            </select></td>
+                </td>
+                <td colspan = 3><i>Green Energy Tracking will not start until this time each day.</i></td>
+              </tr>
+              <tr>
+                <td><b>Scheduled Charge Rate:</b></td>
+                <td>
+        """
+        page += self.optionList(
+            self.ampsList,
+            {
+                "name": "scheduledAmpsMax",
+                "value": self.server.master.settings.get("scheduledAmpsMax", "0"),
+            },
+        )
+        page += """
+                </td>
+              </tr>
+              <tr>
+                <td><b>Scheduled Charge Time:</b></td>
+                <td colspan=3><input type=radio name="schedulePerDay" value="1" disabled> Specify Charge Time per Day
+              </tr>
+              <tr>
+                <td>&nbsp;</td>
+                <td colspan=3><input type=radio name="schedulePerDay" value="0" checked> Same Charge Time for all scheduled days:
+                <td width = 30%>&nbsp;</td>
+              </tr>
+              <tr>
+                <td>&nbsp;</td>
+                <td>
+        """
+        page += self.optionList(self.timeList, {"name": "startCommonChargeTime"})
+        page += """
+              </td>
+              <td> to </td>
+              <td>
+        """
+        page += self.optionList(self.timeList, {"name": "endCommonChargeTime"})
+        page += """
+              </td>
+              <td>&nbsp;</td>
+              <tr>
+                <td><input class='btn btn-outline-success' type=submit value='Save Settings' /></td>
+              </tr>
+        """
+        page += (
+            "<tr><td colspan=4>Click <a href='https://github.com/ngardiner/TWCManager/tree/%s/docs/Scheduling.md' target='_new'>here</a> for more information on Charge Scheduling.</td></tr>"
+            % self.version
+        )
+        page += """
+            </table>
+            </td>
+            <td width = 50%>
+              <table>
+               <tr>
+                 <td colspan = 2><b>Charging Schedule:</b>
+               </tr>
+        """
+        for dayOfWeek in ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]:
+            page += self.chargeScheduleDay(dayOfWeek)
+        page += """
+              </table>
+              </form>
+            </td>
           </tr>
+          <br />
+          <i>This scheduling interface is currently in compatibility mode to make it compatible with existing scheduling settings. For that reason, whilst you may set start and stop times to the minute, only the hour will currently apply. The ability to set scheduled hours per day is also currently disabled.</i>
         """
         page += """
     </body>
@@ -571,15 +689,11 @@ class HTTPControlHandler(BaseHTTPRequestHandler):
           <th>Non-scheduled power charge rate:</th>
           <td>
         """
-        maxamps = self.server.master.config["config"].get("wiringMaxAmpsPerTWC", 5)
-        amps = []
-        for amp in range(5, (maxamps + 1)):
-            amps.append([amp, str(amp) + "A"])
         page += self.optionList(
-            amps,
+            self.ampsList,
             {
                 "name": "nonScheduledAmpsMax",
-                "value": self.server.master.settings.get("nonScheduledAmpsMax", "6"),
+                "value": self.server.master.settings.get("nonScheduledAmpsMax", "0"),
             },
         )
         page += """
@@ -715,9 +829,13 @@ class HTTPControlHandler(BaseHTTPRequestHandler):
 
         self.fields = urllib.parse.parse_qs(self.post_data.decode("utf-8"))
 
+        if self.url.path == "/schedule/save":
+            # User has submitted schedule.
+            self.process_save_schedule()
+            return
+
         if self.url.path == "/settings/save":
             # User has submitted settings.
-            # Call dedicated function
             self.process_save_settings()
             return
 
@@ -744,6 +862,36 @@ class HTTPControlHandler(BaseHTTPRequestHandler):
         )
         return page
 
+    def chargeScheduleDay(self, day):
+
+        # Fetch current settings
+        sched = self.server.master.settings.get("Schedule", {})
+        today = sched.get(day, {})
+        suffix = day + "ChargeTime"
+
+        # Render daily schedule options
+        page  = "<tr>"
+        page += "<td>" + self.checkBox("enabled"+suffix, today.get("enabled", 0)) + "</td>"
+        page += "<td>" + str(day) + "</td>"
+        page += "<td>" + self.optionList(self.timeList, {"name": "start"+suffix}) + "</td>"
+        page += "<td> to </td>"
+        page += "<td>" + self.optionList(self.timeList, {"name": "end"+suffix}) + "</td>"
+        page += "<td>" + self.checkBox("flex"+suffix, today.get("flex", 0)) + "</td>"
+        page += "<td>Flex Charge</td>"
+        page += "</tr>"
+        return page
+
+    def getFieldValue(self, key):
+        # Parse the form value represented by key, and return the
+        # value either as an integer or string
+        keya = str(key)
+        vala = self.fields[key][0].replace("'", "")
+        try:
+            if int(vala) or vala == "0":
+                return int(vala)
+        except ValueError:
+            return vala
+
     def log_message(self, format, *args):
         pass
 
@@ -762,22 +910,68 @@ class HTTPControlHandler(BaseHTTPRequestHandler):
         page += "</select>"
         return page
 
+    def process_save_schedule(self):
+
+        # Alias the settings dictionary for readability
+        settings = self.server.master.settings
+
+        # Check that schedule dict exists within settings.
+        # If not, this would indicate that this is the first time
+        # we have saved the new schedule settings
+        if (settings.get("Schedule", None) == None):
+            settings["Schedule"] = {}
+
+        # Detect schedule keys. Rather than saving them in a flat
+        # structure, we'll store them multi-dimensionally
+        fieldsout = self.fields.copy()
+        ct = re.compile(r'(?P<trigger>enabled|end|flex|start)(?P<day>.*?)ChargeTime')
+        for key in self.fields:
+            match = ct.match(key)
+            if match:
+                # Detected a multi-dimensional (per-day) key
+                # Rewrite it into the settings array and delete it
+                # from the input
+
+                if settings["Schedule"].get(match.group(2), None) == None:
+                    # Create dictionary key for this day
+                    settings["Schedule"][match.group(2)] = {}
+
+                # Set per-day settings
+                settings["Schedule"][match.group(2)][match.group(1)] = self.getFieldValue(key)
+
+            else:
+                if settings["Schedule"].get("Settings", None) == None:
+                    settings["Schedule"]["Settings"] = {}
+                settings["Schedule"]["Settings"][key] = self.getFieldValue(key)
+
+        # During Phase 1 (backwards compatibility) for the new scheduling
+        # UI, after writing the settings in the inteded new format, we then
+        # write back to the existing settings nodes so that it is backwards
+        # compatible.
+
+        # Scheduled amps
+        settings["scheduledAmpsMax"] = float(settings["Schedule"]["Settings"]["scheduledAmpsMax"])
+
+        # Save Settings
+        self.server.master.saveSettings()
+
+        self.send_response(302)
+        self.send_header("Location", "/")
+        self.end_headers()
+        self.wfile.write("".encode("utf-8"))
+        return
+
     def process_save_settings(self):
 
         # Write settings
         for key in self.fields:
-            keya = str(key)
-            vala = self.fields[key][0].replace("'", "")
-            try:
-                if int(vala):
-                    self.server.master.settings[keya] = int(vala)
-            except ValueError:
-                self.server.master.settings[keya] = vala
+            self.server.master.settings[key] = self.getFieldValue(key)
 
         # If Non-Scheduled power action is either Do not Charge or
         # Track Green Energy, set Non-Scheduled power rate to 0
         if int(self.server.master.settings.get("nonScheduledAction", 1)) > 1:
             self.server.master.settings["nonScheduledAmpsMax"] = 0
+        #scheduledAmpsStartHour
         self.server.master.saveSettings()
 
         # Redirect to the index page
@@ -856,20 +1050,13 @@ class HTTPControlHandler(BaseHTTPRequestHandler):
           <tr><td width = '8%'>Charge for:</td>
           <td width = '7%'>
         """
-        hours = []
-        for hour in range(1, 25):
-            hours.append([(hour * 3600), str(hour) + "h"])
-        page += self.optionList(hours, {"name": "chargeNowDuration"})
+        page += self.optionList(self.hoursDurationList, {"name": "chargeNowDuration"})
         page += """
           </td>
           <td width = '8%'>Charge Rate:</td>
           <td width = '7%'>
         """
-        amps = []
-        maxamps = self.server.master.config["config"].get("wiringMaxAmpsPerTWC", 5)
-        for amp in range(5, (maxamps + 1)):
-            amps.append([amp, str(amp) + "A"])
-        page += self.optionList(amps, {"name": "chargeNowRate"})
+        page += self.optionList(self.ampsList[1:], {"name": "chargeNowRate"})
         page += """
           </td>
           <td>
