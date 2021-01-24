@@ -72,6 +72,8 @@ modules_available = [
     "EMS.TED",
     "Status.HASSStatus",
     "Status.MQTTStatus",
+    "Pricing.aWATTarPricing",
+    "Pricing.StaticPricing",
 ]
 
 # Enable support for Python Visual Studio Debugger
@@ -223,6 +225,8 @@ def background_tasks_thread(master):
                 check_green_energy()
             elif task["cmd"] == "getLifetimekWh":
                 master.getSlaveLifetimekWh()
+            elif task["cmd"] == "getPricing":
+                master.getPricing()
             elif task["cmd"] == "getVehicleVIN":
                 master.getVehicleVIN(task["slaveTWC"], task["vinPart"])
             elif task["cmd"] == "snapHistoryData":
