@@ -735,7 +735,7 @@ class TeslaAPI:
                 # When multiple cars are enrolled in the car API, only start/stop
                 # charging cars parked at home.
 
-                if vehicle.update_location() == False:
+                if vehicle.update_location(3600) == False:
                     result = "error"
                     continue
 
