@@ -409,6 +409,12 @@
             # Enable this module if you are a customer of aWATTar in Austria
             "enabled": false
         },
+        "PVPCes": {
+            # Enable this module if you are a customer under PVPC in Spain
+            # You need to get a personal token from https://api.esios.ree.es/ 
+            "enabled": false,
+            "token": "xxx"
+        },
         "Static": {
             # The static pricing module allows you to specify static pricing, if
             # your utility or provider do not provide a dynamic API. This still

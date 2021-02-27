@@ -6,6 +6,9 @@ class StaticPricing:
 
     import time
 
+    capabilities = {
+        "AdvancePricing": True
+    }
     config = None
     configConfig = None
     configStatic = None
@@ -34,6 +37,10 @@ class StaticPricing:
         if not self.status:
             self.master.releaseModule("lib.TWCManager.Pricing", self.__class__.__name__)
             return None
+
+    def getCapabilities(self, capability):
+        # Allows query of module capabilities
+        return self.capabilities.get(capability, False)
 
     def getExportPrice(self):
 

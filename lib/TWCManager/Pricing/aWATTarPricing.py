@@ -5,6 +5,9 @@ class aWATTarPricing:
 
     # aWATTar asks us to limit queries to once every 15 minutes
     cacheTime = 900
+    capabilities = {
+        "AdvancePricing": True
+    }
     config = None
     configConfig = None
     configAwattar = None
@@ -36,6 +39,10 @@ class aWATTarPricing:
         if not self.status:
             self.master.releaseModule("lib.TWCManager.Pricing", self.__class__.__name__)
             return None
+
+    def getCapabilities(self, capability):
+        # Allows query of module capabilities
+        return self.capabilities.get(capability, False)
 
     def getExportPrice(self):
 
