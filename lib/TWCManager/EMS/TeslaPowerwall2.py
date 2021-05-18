@@ -219,9 +219,7 @@ class TeslaPowerwall2:
                 r.raise_for_status()
             except Exception as e:
                 if hasattr(e, "response") and e.response.status_code == 403:
-                    logger.info(
-                        "Authentication required to access local Powerwall API"
-                    )
+                    logger.info("Authentication required to access local Powerwall API")
                 else:
                     logger.log(
                         logging.INFO4,
@@ -249,6 +247,9 @@ class TeslaPowerwall2:
 
     def getStormWatch(self):
         carapi = self.master.getModuleByName("TeslaAPI")
+        if carapi is None:
+            return dict()
+
         token = carapi.getCarApiBearerToken()
         expiry = carapi.getCarApiTokenExpireTime()
         now = self.time.time()
