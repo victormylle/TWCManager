@@ -317,12 +317,14 @@ class TWCSlave:
                 # Increase array length to 9
                 self.master.slaveHeartbeatData.append(0x00)
 
-        self.master.getModulesByType("Interface")[0]["ref"].send(
-            bytearray(b"\xFD\xE0")
-            + self.master.getFakeTWCID()
-            + bytearray(masterID)
-            + bytearray(self.master.slaveHeartbeatData)
-        )
+        interface = self.master.getInterfaceModule()
+        if interface:
+            interface.send(
+                bytearray(b"\xFD\xE0")
+                + self.master.getFakeTWCID()
+                + bytearray(masterID)
+                + bytearray(self.master.slaveHeartbeatData)
+            )
 
     def send_master_heartbeat(self):
         # Send our fake master's heartbeat to this TWCSlave.
@@ -549,12 +551,14 @@ class TWCSlave:
                 ).getCarApiVehicles():
                     vehicle.stopAskingToStartCharging = False
 
-        self.master.getModulesByType("Interface")[0]["ref"].send(
-            bytearray(b"\xFB\xE0")
-            + self.master.getFakeTWCID()
-            + bytearray(self.TWCID)
-            + bytearray(self.masterHeartbeatData)
-        )
+        interface = self.master.getInterfaceModule()
+        if interface:
+            interface.send(
+                bytearray(b"\xFB\xE0")
+                + self.master.getFakeTWCID()
+                + bytearray(self.TWCID)
+                + bytearray(self.masterHeartbeatData)
+            )
 
     def receive_slave_heartbeat(self, heartbeatData):
         # Handle heartbeat message received from real slave TWC.

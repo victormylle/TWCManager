@@ -267,7 +267,11 @@ class TWCMaster:
         return matched
 
     def getInterfaceModule(self):
-        return self.getModulesByType("Interface")[0]["ref"]
+        interfaceModules = self.getModulesByType("Interface")
+        if len(interfaceModules) > 0:
+            return interfaceModules[0]["ref"]
+        else:
+            return None
 
     def getScheduledAmpsDaysBitmap(self):
         return self.settings.get("scheduledAmpsDaysBitmap", 0x7F)

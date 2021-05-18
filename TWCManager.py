@@ -231,6 +231,8 @@ def unescape_msg(inmsg: bytearray, msgLen):
 
 
 def background_tasks_thread(master):
+    load_modules_and_settings(master)
+
     carapi = master.getModuleByName("TeslaAPI")
 
     while True:
@@ -527,9 +529,6 @@ timeToRaise2A = 0
 # Instantiate necessary classes
 master = TWCMaster(fakeTWCID, config)
 
-loadModulesThread = threading.Thread(target=load_modules_and_settings, args=(master,))
-loadModulesThread.start()
-
 # Create a background thread to handle tasks that take too long on the main
 # thread.  For a primer on threads in Python, see:
 # http://www.laurentluce.com/posts/python-threads-synchronization-locks-rlocks-semaphores-conditions-events-and-queues/
@@ -559,7 +558,10 @@ while True:
 
         # Add a 25ms sleep to prevent pegging pi's CPU at 100%. Lower CPU means
         # less power used and less waste heat.
-        time.sleep(0.025)
+        interface = None
+        while interface is None:
+            time.sleep(0.025)
+            interface = master.getInterfaceModule()
 
         now = time.time()
 
