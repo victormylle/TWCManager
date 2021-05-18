@@ -341,6 +341,46 @@ def check_green_energy():
         master.setMaxAmpsToDivideAmongSlaves(master.getMaxAmpsToDivideGreenEnergy())
 
 
+def load_modules_and_settings(master):
+    # Instantiate all modules in the modules_available list automatically
+    for module in modules_available:
+        modulename = []
+        if str(module).find(".") != -1:
+            modulename = str(module).split(".")
+
+        try:
+            moduleref = importlib.import_module("lib.TWCManager." + module)
+            modclassref = getattr(moduleref, modulename[1])
+            modinstance = modclassref(master)
+
+            # Register the new module with master class, so every other module can
+            # interact with it
+            master.registerModule(
+                {"name": modulename[1], "ref": modinstance, "type": modulename[0]}
+            )
+        except ImportError as e:
+            logger.error(
+                "%s: " + str(e) + ", when importing %s, not using %s",
+                "ImportError",
+                module,
+                module,
+                extra={"colored": "red"},
+            )
+        except ModuleNotFoundError as e:
+            logger.info(
+                "%s: " + str(e) + ", when importing %s, not using %s",
+                "ModuleNotFoundError",
+                module,
+                module,
+                extra={"colored": "red"},
+            )
+        except:
+            raise
+
+    # Load settings from file
+    master.loadSettings()
+
+
 def update_statuses():
 
     # Print a status update if we are on track green energy showing the
@@ -487,44 +527,8 @@ timeToRaise2A = 0
 # Instantiate necessary classes
 master = TWCMaster(fakeTWCID, config)
 
-# Instantiate all modules in the modules_available list automatically
-for module in modules_available:
-    modulename = []
-    if str(module).find(".") != -1:
-        modulename = str(module).split(".")
-
-    try:
-        moduleref = importlib.import_module("lib.TWCManager." + module)
-        modclassref = getattr(moduleref, modulename[1])
-        modinstance = modclassref(master)
-
-        # Register the new module with master class, so every other module can
-        # interact with it
-        master.registerModule(
-            {"name": modulename[1], "ref": modinstance, "type": modulename[0]}
-        )
-    except ImportError as e:
-        logger.error(
-            "%s: " + str(e) + ", when importing %s, not using %s",
-            "ImportError",
-            module,
-            module,
-            extra={"colored": "red"},
-        )
-    except ModuleNotFoundError as e:
-        logger.info(
-            "%s: " + str(e) + ", when importing %s, not using %s",
-            "ModuleNotFoundError",
-            module,
-            module,
-            extra={"colored": "red"},
-        )
-    except:
-        raise
-
-
-# Load settings from file
-master.loadSettings()
+loadModulesThread = threading.Thread(target=load_modules_and_settings, args=(master,))
+loadModulesThread.start()
 
 # Create a background thread to handle tasks that take too long on the main
 # thread.  For a primer on threads in Python, see:
