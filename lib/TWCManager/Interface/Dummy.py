@@ -1,21 +1,21 @@
+import logging
+import time
+
+logger = logging.getLogger(__name__.rsplit(".")[-1])
+
+
 class Dummy:
 
-    import time
-
-    debugLevel = 0
     enabled = False
     master = None
     msgBuffer = bytes()
-    twcID = 1234
+    proto = None
+    twcID = bytearray(b"\x12\x34")
     timeLastTx = 0
 
     def __init__(self, master):
         self.master = master
         classname = self.__class__.__name__
-        try:
-            self.debugLevel = master.config["config"]["debugLevel"]
-        except KeyError:
-            pass
 
         # Unload if this module is disabled or misconfigured
         if "interface" in master.config and classname in master.config["interface"]:
@@ -26,7 +26,11 @@ class Dummy:
 
         # Configure the module
         if "interface" in master.config:
-            self.twcID = master.config["interface"][classname].get("twcID", 1234)
+            if master.config["interface"][classname].get("twcID", False):
+                self.twcID =  bytearray(str(master.config["interface"][classname].get("twcID")).encode())
+
+        # Instantiate protocol module for sending/recieving TWC protocol
+        self.proto = self.master.getModuleByName("TWCProtocol")
 
     def close(self):
         # NOOP - No need to close anything
@@ -38,22 +42,36 @@ class Dummy:
         return len(self.msgBuffer)
 
     def send(self, msg):
-        # NOOP - TBD
+        # This is the external send interface - it is called by TWCManager which expects that it is
+        # talking to a live TWC. The key here is that we treat it as our reciept interface and parse
+        # the message as if we are a TWC
 
-        self.master.debugLog(9, "IfaceDummy", "Tx@: " + self.master.hex_str(msg))
-        self.timeLastTx = self.time.time()
+        packet = self.proto.parseMessage(msg)
+        if packet["Command"] == "MasterLinkready2":
+            self.sendInternal(self.proto.createMessage({
+                "Command": "SlaveLinkready",
+                "SenderID": self.twcID,
+                "Sign": self.master.getSlaveSign(),
+                "Amps": bytearray(b"\x1F\x40")
+            }))
+        elif packet["Command"] == "MasterHeartbeat":
+            self.sendInternal(self.proto.createMessage({
+                 "Command": "SlaveHeartbeat",
+                 "SenderID": self.twcID,
+                 "RecieverID": packet["SenderID"]
+            }))
+
+        logger.log(logging.INFO9, "Tx@: " + self.master.hex_str(msg))
+        self.timeLastTx = time.time()
         return 0
 
     def read(self, len):
         # Read our buffered messages. We simulate this by making a copy of the
-        # current message buffer, clearing the shared message buffer and then
+        # current message buffer, clearing the read message buffer bytes and then
         # returning the copied message to TWCManager. This is what it would look
         # like if we read from a serial interface
-        localMsgBuffer = self.msgBuffer
-        self.msgBuffer = None
-        self.master.debugLog(
-            9, "IfaceDummy", "Rx@: " + self.master.hex_str(localMsgBuffer)
-        )
+        localMsgBuffer = self.msgBuffer[:len]
+        self.msgBuffer = self.msgBuffer[len:]
         return localMsgBuffer
 
     def sendInternal(self, msg):
@@ -67,7 +85,7 @@ class Dummy:
         for i in range(1, len(msg)):
             checksum += msg[i]
 
-        msg.append(checksum & 0xFF)
+        msg.append(checksum & 0xff)
 
         # Escaping special chars:
         # The protocol uses C0 to mark the start and end of the message.  If a C0
@@ -81,15 +99,15 @@ class Dummy:
 
         i = 0
         while i < len(msg):
-            if msg[i] == 0xC0:
+            if msg[i] == 0xc0:
                 msg[i : i + 1] = b"\xdb\xdc"
                 i = i + 1
-            elif msg[i] == 0xDB:
+            elif msg[i] == 0xdb:
                 msg[i : i + 1] = b"\xdb\xdd"
                 i = i + 1
             i = i + 1
 
-        msg = bytearray(b"\xc0" + msg + b"\xc0")
-        self.master.debugLog(9, "IfaceDummy", "TxInt@: " + self.master.hex_str(msg))
+        msg = bytearray(b"\xc0" + msg + b"\xc0\xfe")
+        logger.log(logging.INFO9, "TxInt@: " + self.master.hex_str(msg))
 
         self.msgBuffer = msg

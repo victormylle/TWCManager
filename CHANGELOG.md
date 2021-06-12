@@ -2,7 +2,29 @@
 
 This document logs the changes per release of TWCManager.
 
-## v1.2.1 - Current development branch
+## v1.2.2 - Current development branch
+
+  * (@ngardiner) - Added SmartPi EMS interface
+  * (@Saftwerk, @ngardiner) - Added Volkszahler EMS interface
+  * (@ngardiner) - Added functionality to Dummy module to emulate TWC communication to the point that Policy selection occurs
+  * (@MikeBishop) - Implement Policy Shortcut function to allow Charge Now to take immediate effect
+  * (@GMerg) - Added OpenWeatherMap EMS interface
+  * (@ngardiner) - Added VIN Management functionality, where vehicles can be allowed or denied charging based on VIN. With this, we introduce the ability to define vehicle groups, with future functionality allowing policy settings to be applied to these groups.
+  * (@ngardiner) - Addition of a debug interface which allows tuning advanced inner workings of TWCManager, and allows sending commands to TWCs.
+  * (@ngardiner) - Added support for Tesla MFA authentication flows
+  * (@MikeBishop) - Improve API error handling, removing transient error delays and replacing with an exponential backoff mechanism to avoid delaying other background tasks.
+  * (@MikeBishop) - Added debounce dampening for situations where intermittent consumption spikes / loads cause TWC to start and stop charging frequently.
+  * (@ngardiner) - Add new consumption offset handling which allows for dynamic configuration of offsets in Watts and Amps via web and API
+  * Bugfixes
+    * (@ngardiner) - Better handling of permissions issues when attempting to save settings.json - alerts user to check file permissions via Web Interface
+    * (@ngardiner) - Fixed issue with logging errors when a certain exception is raised in the Snapshot History function
+    * (@ngardiner) - Fixed issue with Modern web interface Charge Now setting not working
+    * (@ngardiner) - Fix behaviour of Stop Responding to Slaves charge stop mode, by re-enabling slave communication after 60 seconds
+    * (@ngardiner) - Fix issues with subtractChargerLoad when using one of the (few) EMS modules which only provide Generation values. Previously, we only subtracted the Charger Load from Consumption which doesn't work in Generation-only measurement environments.
+    * (@leeliu) - Fix TWC ID display for Modern theme which was truncating trailing zeros
+    * (@ngardiner) - Fix bug in Stop Responding to Slaves routine caused by incorrect reference to time function
+
+## v1.2.1 - 2021-04-04
 
   * Added support for Kostal inverters (Pico/Plenticore) (thanks @hopfi2k)
   * Added support for smart-me.com inverter API
@@ -22,6 +44,12 @@ This document logs the changes per release of TWCManager.
   * Move grace period functionality for vehicles connected prior to policy evaluation to the master module, which opens the door to policy evaluation based on vehicle arrival/VIN (thanks @MikeBishop)
   * Split and show the values of Charger Load and Other Load in console output when the Subtract Charger Load setting is enabled (thanks @mikey4321)
   * Added EMS module support for SmartMe API
+  * Added EMS module for Efergy (thanks @juanjoqg)
+  * Added Graph visualisation for supported Logging modules - MySQL currently (thanks @juanjoqg)
+  * Updates to accomodate Powerwall authentication flow changes (thanks @MikeBishop)
+  * Do not override the charge_amps set in a policy when running checkGreenEnergy, allowing for Green Energy tracking numbers to be updated when Charge Now or Scheduled Charging policies are active (thanks @MikeBishop)
+  * Significant overhaul of logging module interface to utilize the python logger architecture rather than implementing our own infrastructure (thanks @tjikkun!)
+  * When competing background tasks are submitted, update the existing task details rather than dropping it completely (thanks @MikeBishop)
   * Bugfixes
       * Add a sleep of 5 seconds when waking car up to avoid an infinite loop (thanks @dschuesae)
       * Fix a bug with the legacy web interface which causes the Resume Track Green Energy setting of None to fail. Also added a deprecation notice to the web interface to ensure people don't inadvertently use it over the modular interface.
@@ -30,6 +58,7 @@ This document logs the changes per release of TWCManager.
       * Fix for the Fronius EMS module to query at System context rather than Device context which was failing to work in some installations due to Device ID mismatch
       * Fix dummy interface to load in place of RS485 interface for testing (thanks @tjikkun)
       * Add routines to avoid errors when settings keys are not defined (thanks @tjikkun)
+      * Kostal EMS module no longer loads if not configured (thanks @MikeBishop)
 
 ## v1.2.0 - 2020-10-09
 

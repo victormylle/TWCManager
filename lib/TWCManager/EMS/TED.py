@@ -1,4 +1,11 @@
 # The Energy Detective (TED)
+import logging
+import re
+import requests
+import time
+
+
+logger = logging.getLogger(__name__.rsplit(".")[-1])
 
 
 class TED:
@@ -7,16 +14,11 @@ class TED:
     # Energy Detective (TED). It's a piece of hardware available
     # at http://www.theenergydetective.com
 
-    import re
-    import requests
-    import time
-
     cacheTime = 10
     config = None
     configConfig = None
     configTED = None
     consumedW = 0
-    debugLevel = 0
     fetchFailed = False
     generatedW = 0
     importW = 0
@@ -40,7 +42,6 @@ class TED:
             self.configTED = self.config["sources"]["TED"]
         except KeyError:
             self.configTED = {}
-        self.debugLevel = self.configConfig.get("debugLevel", 0)
         self.status = self.configTED.get("enabled", False)
         self.serverIP = self.configTED.get("serverIP", None)
         self.serverPort = self.configTED.get("serverPort", "80")
@@ -53,7 +54,7 @@ class TED:
     def getConsumption(self):
 
         if not self.status:
-            self.master.debugLog(10, "TED", "TED EMS Module Disabled. Skipping getConsumption")
+            logger.debug("TED EMS Module Disabled. Skipping getConsumption")
             return 0
 
         # Perform updates if necessary
@@ -65,7 +66,7 @@ class TED:
     def getGeneration(self):
 
         if not self.status:
-            self.master.debugLog(10, "TED", "TED EMS Module Disabled. Skipping getGeneration")
+            logger.debug("TED EMS Module Disabled. Skipping getGeneration")
             return 0
 
         # Perform updates if necessary
@@ -80,10 +81,10 @@ class TED:
         self.fetchFailed = False
 
         try:
-            r = self.requests.get(url, timeout=self.timeout)
-        except self.requests.exceptions.ConnectionError as e:
-            self.master.debugLog(4, "TED", "Error connecting to TED to fetch solar data")
-            self.master.debugLog(10, "TED", str(e))
+            r = requests.get(url, timeout=self.timeout)
+        except requests.exceptions.ConnectionError as e:
+            logger.log(logging.INFO4, "Error connecting to TED to fetch solar data")
+            logger.debug(str(e))
             self.fetchFailed = True
             return False
 
@@ -92,7 +93,7 @@ class TED:
 
     def update(self):
 
-        if (int(self.time.time()) - self.lastFetch) > self.cacheTime:
+        if (int(time.time()) - self.lastFetch) > self.cacheTime:
             # Cache has expired. Fetch values from HomeAssistant sensor.
 
             url = "http://" + self.serverIP + ":" + self.serverPort
@@ -101,11 +102,11 @@ class TED:
             value = self.getTEDValue(url)
             m = None
             if value:
-                m = self.re.search(
-                    b"^Solar,[^,]+,-?([^, ]+),", value, self.re.MULTILINE
+                m = re.search(
+                    b"^Solar,[^,]+,-?([^, ]+),", value, re.MULTILINE
                 )
             else:
-                self.master.debugLog(5, "TED", "Failed to find value in response from TED")
+                logger.log(logging.INFO5, "Failed to find value in response from TED")
                 self.fetchFailed = True
 
             if m:
@@ -113,7 +114,7 @@ class TED:
 
             # Update last fetch time
             if self.fetchFailed is not True:
-                self.lastFetch = int(self.time.time())
+                self.lastFetch = int(time.time())
 
             return True
         else:

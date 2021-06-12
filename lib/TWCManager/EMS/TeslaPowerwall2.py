@@ -1,12 +1,16 @@
 # Tesla Powerwall 2 EMS Module
+import logging
+import time
 
 from ww import f
+
+
+logger = logging.getLogger(__name__.rsplit(".")[-1])
 
 
 class TeslaPowerwall2:
 
     import requests
-    import time
     import urllib3
     import json as json
 
@@ -15,7 +19,6 @@ class TeslaPowerwall2:
     config = None
     configConfig = None
     configPowerwall = None
-    debugLevel = 0
     master = None
     minSOE = 90
     lastFetch = dict()
@@ -36,7 +39,6 @@ class TeslaPowerwall2:
         self.configPowerwall = self.config.get("sources", dict()).get(
             "Powerwall2", dict()
         )
-        self.debugLevel = self.configConfig.get("debugLevel", 0)
         self.status = self.configPowerwall.get("enabled", False)
         self.serverIP = self.configPowerwall.get("serverIP", None)
         self.serverPort = self.configPowerwall.get("serverPort", "443")
@@ -45,7 +47,7 @@ class TeslaPowerwall2:
         self.cloudID = self.configPowerwall.get("cloudID", None)
         self.cloudCacheTime = self.configConfig.get("cloudUpdateInterval", 1800)
         self.httpSession = self.requests.session()
-        if self.status and self.debugLevel < 11:
+        if self.status and logger.getEffectiveLevel() > 9:
             # PW uses self-signed certificates; squelch warnings
             self.urllib3.disable_warnings(
                 category=self.urllib3.exceptions.InsecureRequestWarning
@@ -101,28 +103,27 @@ class TeslaPowerwall2:
 
     @property
     def reservePercent(self):
-        value = self.getOperation()
-        return self.adjustPercentage(float(value.get("backup_reserve_percent", 0)))
+        if self.operatingMode == "backup":
+            return float(96)
+        else:
+            value = self.getOperation()
+            return self.adjustPercentage(float(value.get("backup_reserve_percent", 0)))
 
     @property
     def stormWatch(self):
         value = self.getStormWatch()
         return value.get("storm_mode_active", False)
 
-    def debugLog(self, minlevel, message):
-        if self.debugLevel >= minlevel:
-            self.master.debugLog(minlevel, "Powerwall2", message)
-
     def adjustPercentage(self, raw_value):
-        return (raw_value - 5) / .95
+        return (raw_value - 5) / 0.95
 
     def doPowerwallLogin(self):
         # If we have password authentication configured, this function will submit
         # the login details to the Powerwall API, and get an authentication token.
         # If we already have an authentication token, we just use that.
         if self.password is not None:
-            if self.tokenTimeout < self.time.time():
-                self.debugLog(6, "Logging in to Powerwall API")
+            if self.tokenTimeout < time.time():
+                logger.log(logging.INFO6, "Logging in to Powerwall API")
                 headers = {"Content-Type": "application/json"}
                 data = {
                     "username": "customer",
@@ -140,31 +141,32 @@ class TeslaPowerwall2:
                         verify=False,
                     )
                 except self.requests.exceptions.ConnectionError as e:
-                    self.debugLog(
-                        4, "Error connecting to Tesla Powerwall 2 for API login"
+                    logger.log(
+                        logging.INFO4,
+                        "Error connecting to Tesla Powerwall 2 for API login",
                     )
-                    self.debugLog(10, str(e))
+                    logger.debug(str(e))
                     return False
 
                 # Time out token after one hour
-                self.tokenTimeout = self.time.time() + (60 * 60)
+                self.tokenTimeout = time.time() + (60 * 60)
 
                 # After authentication, start Powerwall
                 # If we don't do this, the Powerwall will stop working after login
                 self.startPowerwall()
 
             else:
-                self.debugLog(
-                    6,
+                logger.log(
+                    logging.INFO6,
                     "Powerwall2 API token still valid for "
-                    + str(self.tokenTimeout - self.time.time())
+                    + str(self.tokenTimeout - time.time())
                     + " seconds.",
                 )
 
     def getConsumption(self):
 
         if not self.status:
-            self.debugLog(10, "Powerwall2 EMS Module Disabled. Skipping getConsumption")
+            logger.debug("Powerwall2 EMS Module Disabled. Skipping getConsumption")
             return 0
 
         # Return consumption value
@@ -173,23 +175,19 @@ class TeslaPowerwall2:
     def getGeneration(self):
 
         if not self.status:
-            self.debugLog(10, "Powerwall2 EMS Module Disabled. Skipping getGeneration")
+            logger.debug("Powerwall2 EMS Module Disabled. Skipping getGeneration")
             return 0
 
-        if self.batteryLevel > (self.minSOE * 1.05) and self.importW < 900:
+        if self.batteryLevel > (self.minSOE * 1.05):
             self.suppressGeneration = False
         if self.batteryLevel < (self.minSOE * 0.95):
             self.suppressGeneration = True
 
             # Battery is below threshold; leave all generation for PW charging
-            self.debugLog(5, "Powerwall needs to charge. Ignoring generation.")
+            logger.log(logging.INFO5, "Powerwall needs to charge. Ignoring generation.")
 
         if self.suppressGeneration:
             return 0
-
-        # Don't take effect immediately, in case it's a temporary blip.
-        if self.importW > 1000:
-            self.suppressGeneration = True
 
         # Return generation value
         return float(self.generatedW)
@@ -200,7 +198,7 @@ class TeslaPowerwall2:
             self.lastFetch[path] if path in self.lastFetch else (0, dict())
         )
 
-        if (int(self.time.time()) - lastTime) > self.cacheTime:
+        if (int(time.time()) - lastTime) > self.cacheTime:
 
             # Fetch the specified URL from Powerwall and return the data
 
@@ -216,14 +214,18 @@ class TeslaPowerwall2:
                 )
                 r.raise_for_status()
             except Exception as e:
-                self.debugLog(
-                    4, "Error connecting to Tesla Powerwall 2 to fetch " + path
-                )
-                self.debugLog(10, str(e))
+                if hasattr(e, "response") and e.response.status_code == 403:
+                    logger.info("Authentication required to access local Powerwall API")
+                else:
+                    logger.log(
+                        logging.INFO4,
+                        "Error connecting to Tesla Powerwall 2 to fetch " + path,
+                    )
+                    logger.debug(str(e))
                 return lastData
 
             lastData = r.json()
-            self.lastFetch[path] = (self.time.time(), r.json())
+            self.lastFetch[path] = (time.time(), r.json())
 
         return lastData
 
@@ -243,14 +245,14 @@ class TeslaPowerwall2:
         carapi = self.master.getModuleByName("TeslaAPI")
         token = carapi.getCarApiBearerToken()
         expiry = carapi.getCarApiTokenExpireTime()
-        now = self.time.time()
+        now = time.time()
         key = "CLOUD/live_status"
 
         (lastTime, lastData) = (
             self.lastFetch[key] if key in self.lastFetch else (0, dict())
         )
 
-        if (int(self.time.time()) - lastTime) > self.cloudCacheTime:
+        if (int(time.time()) - lastTime) > self.cloudCacheTime:
 
             if token and now < expiry:
                 headers = {
@@ -279,16 +281,13 @@ class TeslaPowerwall2:
                         (site, name) = products[0]
                         self.cloudID = site
                     elif len(products) > 1:
-                        self.debugLog(
-                            1,
-                            "Multiple Powerwall sites linked to your Tesla account.  Please specify the correct site ID in your config.json.",
+                        logger.info(
+                            "Multiple Powerwall sites linked to your Tesla account.  Please specify the correct site ID in your config.json."
                         )
                         for (site, name) in products:
-                            self.debugLog(1, f("   {site}: {name}"))
+                            logger.info(f("   {site}: {name}"))
                     else:
-                        self.debugLog(
-                            1, "Couldn't find a Powerwall on your Tesla account."
-                        )
+                        logger.info("Couldn't find a Powerwall on your Tesla account.")
 
                 if self.cloudID:
                     url = f(
@@ -324,6 +323,6 @@ class TeslaPowerwall2:
                 url, headers=headers, timeout=self.timeout, verify=False
             )
         except self.requests.exceptions.ConnectionError as e:
-            self.debugLog(4, "Error instructing Tesla Powerwall 2 to start")
-            self.debugLog(10, str(e))
+            logger.log(logging.INFO4, "Error instructing Tesla Powerwall 2 to start")
+            logger.debug(str(e))
             return False

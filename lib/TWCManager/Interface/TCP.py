@@ -1,25 +1,32 @@
+import logging
 import socket
+
+
+logger = logging.getLogger(__name__.rsplit(".")[-1])
 
 
 class TCP:
 
     import time
 
-    debugLevel = 0
-    enabled = False
-    master = None
-    port = 6000
-    server = None
-    sock = None
+    config    = None
+    configTCP = None
+    enabled   = False
+    master    = None
+    port      = 6000
+    server    = None
+    sock      = None
     timeLastTx = 0
 
     def __init__(self, master):
         self.master = master
-        try:
-            self.debugLevel = master.config["config"]["debugLevel"]
-        except KeyError:
-            pass
+        self.config = master.config
+        if "interface" in master.config:
+            self.configTCP = master.config["interface"].get("TCP", {})
+        else:
+            self.configTCP = {}
 
+        self.enabled = self.configTCP.get("enabled", False)
         # Unload if this module is disabled or misconfigured
         if not self.enabled:
             self.master.releaseModule("lib.TWCManager.Interface", "TCP")
@@ -29,8 +36,12 @@ class TCP:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
         # If we are configured to listen, open the listening socket
-        self.sock.bind(("localhost", self.port))
-        self.sock.listen(1)
+        if self.configTCP.get("listen", False):
+            self.sock.bind(("localhost", self.port))
+            self.sock.listen(1)
+        else:
+            # Connect to server
+            self.sock.connect((self.server, self.port))
 
     def close(self):
         # Close the TCP socket interface
@@ -43,7 +54,7 @@ class TCP:
 
     def read(self, len):
         # Read the specified amount of data from the TCP interface
-        return 0
+        return self.sock.recv(len)
 
     def send(self, msg):
         # Send msg on the RS485 network. We'll escape bytes with a special meaning,
@@ -55,7 +66,7 @@ class TCP:
         for i in range(1, len(msg)):
             checksum += msg[i]
 
-        msg.append(checksum & 0xFF)
+        msg.append(checksum & 0xff)
 
         # Escaping special chars:
         # The protocol uses C0 to mark the start and end of the message.  If a C0
@@ -69,17 +80,17 @@ class TCP:
 
         i = 0
         while i < len(msg):
-            if msg[i] == 0xC0:
+            if msg[i] == 0xc0:
                 msg[i : i + 1] = b"\xdb\xdc"
                 i = i + 1
-            elif msg[i] == 0xDB:
+            elif msg[i] == 0xdb:
                 msg[i : i + 1] = b"\xdb\xdd"
                 i = i + 1
             i = i + 1
 
         msg = bytearray(b"\xc0" + msg + b"\xc0")
-        self.master.debugLog(9, "IfaceTCP  ", "Tx@: " + self.master.hex_str(msg))
+        logger.log(logging.INFO9, "Tx@: " + self.master.hex_str(msg))
 
-        # self.ser.write(msg)
+        self.sock.send(msg)
 
         self.timeLastTx = self.time.time()

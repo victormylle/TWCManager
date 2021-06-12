@@ -1,17 +1,18 @@
 # Fronius Datamanager Solar.API Integration (Inverter Web Interface)
+import logging
+import requests
+import time
+
+logger = logging.getLogger(__name__.rsplit(".")[-1])
 
 
 class Fronius:
-
-    import requests
-    import time
 
     cacheTime = 10
     config = None
     configConfig = None
     configFronius = None
     consumedW = 0
-    debugLevel = 0
     fetchFailed = False
     generatedW = 0
     importW = 0
@@ -35,7 +36,6 @@ class Fronius:
             self.configFronius = master.config["sources"]["Fronius"]
         except KeyError:
             self.configFronius = {}
-        self.debugLevel = self.configConfig.get("debugLevel", 0)
         self.status = self.configFronius.get("enabled", False)
         self.serverIP = self.configFronius.get("serverIP", None)
         self.serverPort = self.configFronius.get("serverPort", "80")
@@ -45,13 +45,10 @@ class Fronius:
             self.master.releaseModule("lib.TWCManager.EMS", "Fronius")
             return None
 
-    def debugLog(self, minlevel, message):
-        self.master.debugLog(minlevel, "Fronius", message)
-
     def getConsumption(self):
 
         if not self.status:
-            self.debugLog(10, "Fronius EMS Module Disabled. Skipping getConsumption")
+            logger.debug("Fronius EMS Module Disabled. Skipping getConsumption")
             return 0
 
         # Perform updates if necessary
@@ -63,7 +60,7 @@ class Fronius:
     def getGeneration(self):
 
         if not self.status:
-            self.debugLog(10, "Fronius EMS Module Disabled. Skipping getGeneration")
+            logger.debug("Fronius EMS Module Disabled. Skipping getGeneration")
             return 0
 
         # Perform updates if necessary
@@ -89,12 +86,13 @@ class Fronius:
         self.fetchFailed = False
 
         try:
-            r = self.requests.get(url, timeout=self.timeout)
-        except self.requests.exceptions.ConnectionError as e:
-            self.debugLog(
-                4, "Error connecting to Fronius Inverter to fetch sensor value"
+            r = requests.get(url, timeout=self.timeout)
+        except requests.exceptions.ConnectionError as e:
+            logger.log(
+                logging.INFO4,
+                "Error connecting to Fronius Inverter to fetch sensor value",
             )
-            self.debugLog(10, str(e))
+            logger.debug(str(e))
             self.fetchFailed = True
             return False
 
@@ -110,7 +108,7 @@ class Fronius:
 
     def update(self):
 
-        if (int(self.time.time()) - self.lastFetch) > self.cacheTime:
+        if (int(time.time()) - self.lastFetch) > self.cacheTime:
             # Cache has expired. Fetch values from Fronius inverter.
 
             inverterData = self.getInverterData()
@@ -119,8 +117,10 @@ class Fronius:
                     if "UAC" in inverterData["Body"]["Data"]:
                         self.voltage = inverterData["Body"]["Data"]["UAC"]["Value"]
                 except (KeyError, TypeError) as e:
-                    self.debugLog(4, "Exception during parsing Inveter Data (UAC)")
-                    self.debugLog(10, e)
+                    logger.log(
+                        logging.INFO4, "Exception during parsing Inveter Data (UAC)"
+                    )
+                    logger.debug(e)
 
             meterData = self.getMeterData()
             if meterData:
@@ -128,20 +128,24 @@ class Fronius:
 
                     self.generatedW = meterData["Body"]["Data"]["Site"]["P_PV"]
                 except (KeyError, TypeError) as e:
-                    self.debugLog(4, "Exception during parsing Meter Data (Generation)")
-                    self.debugLog(10, e)
+                    logger.log(
+                        logging.INFO4,
+                        "Exception during parsing Meter Data (Generation)",
+                    )
+                    logger.debug(e)
 
                 try:
                     self.consumedW = meterData["Body"]["Data"]["Site"]["P_Load"]
                 except (KeyError, TypeError) as e:
-                    self.debugLog(
-                        4, "Exception during parsing Meter Data (Consumption)"
+                    logger.log(
+                        logging.INFO4,
+                        "Exception during parsing Meter Data (Consumption)",
                     )
-                    self.debugLog(10, e)
+                    logger.debug(e)
 
             # Update last fetch time
             if self.fetchFailed is not True:
-                self.lastFetch = int(self.time.time())
+                self.lastFetch = int(time.time())
 
             return True
         else:

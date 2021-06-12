@@ -1,37 +1,44 @@
 import base64
 import hashlib
+import json
+import logging
 import os
 import re
 import requests
 import time
 from urllib.parse import parse_qs
+from ww import f
+
+logger = logging.getLogger(__name__.rsplit(".")[-1])
+
 
 class TeslaAPI:
 
-    import json
-
     authURL = "https://auth.tesla.com/oauth2/v3/authorize"
-    browserUA = "Mozilla/5.0 (Linux; Android 10; Pixel 3 Build/QQ2A.200305.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/85.0.4183.81 Mobile Safari/537.36"
     callbackURL = "https://auth.tesla.com/void/callback"
     carApiLastErrorTime = 0
     carApiBearerToken = ""
     carApiRefreshToken = ""
     carApiTokenExpireTime = time.time()
     carApiLastStartOrStopChargeTime = 0
+    carApiLastStartOrStopChargeAction = None
+    carApiLastStartOrStopFlipTime = 0
     carApiLastChargeLimitApplyTime = 0
     clientID = "81527cff06843c8634fdc09e8ac0abefb46ac849f38fe1e431c2ef2106796384"
     clientSecret = "c7257eb71a564034f9419ee651c7d0e5f7aa6bfbd18bafb5c5c033b093bb2fa3"
     lastChargeLimitApplied = 0
     lastChargeCheck = 0
     chargeUpdateInterval = 1800
+    startStopDelay = 60
     carApiVehicles = []
     config = None
-    debugLevel = 0
     master = None
+    errorCount = 0
     maxLoginRetries = 10
     minChargeLevel = -1
+    params = None
     refreshURL = "https://owner-api.teslamotors.com/oauth/token"
-    teslaUA = "TeslaApp/3.10.9-433/adff2e065/android/10"
+    session = None
     verifier = ""
 
     # Transient errors are ones that usually disappear if we retry the car API
@@ -56,8 +63,8 @@ class TeslaAPI:
         self.master = master
         try:
             self.config = master.config
-            self.debugLevel = self.config["config"].get("debugLevel", 1)
             self.minChargeLevel = self.config["config"].get("minChargeLevel", -1)
+            self.startStopDelay = self.config["config"].get("startStopDelay", 60)
             self.chargeUpdateInterval = self.config["config"].get(
                 "cloudUpdateInterval", 1800
             )
@@ -70,19 +77,17 @@ class TeslaAPI:
 
     def apiLogin(self, email, password):
 
-        headers = {
-            "User-Agent": self.browserUA,
-            "x-tesla-user-agent": self.teslaUA,
-            "X-Requested-With": "com.teslamotors.tesla",
-        }
-
         for attempt in range(self.maxLoginRetries):
 
             self.verifier = base64.urlsafe_b64encode(os.urandom(86)).rstrip(b"=")
-            challenge = base64.urlsafe_b64encode(hashlib.sha256(self.verifier).digest()).rstrip(b"=")
-            state = base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode("utf-8")
+            challenge = base64.urlsafe_b64encode(
+                hashlib.sha256(self.verifier).digest()
+            ).rstrip(b"=")
+            state = (
+                base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode("utf-8")
+            )
 
-            params = (
+            self.params = (
                 ("client_id", "ownerapi"),
                 ("code_challenge", challenge),
                 ("code_challenge_method", "S256"),
@@ -92,34 +97,40 @@ class TeslaAPI:
                 ("state", state),
             )
 
-            session = requests.Session()
-            resp = session.get(self.authURL, headers=headers, params=params)
+            self.session = requests.Session()
+            resp = self.session.get(self.authURL, params=self.params)
 
             if resp.ok and "<title>" in resp.text:
-                self.master.debugLog(
-                    6,
-                    "TeslaAPI",
+                logger.log(
+                    logging.INFO6,
                     "Tesla Auth form fetch success, attempt: " + str(attempt),
                 )
                 break
             else:
-                self.master.debugLog(
-                    6,
-                    "TeslaAPI",
+                logger.log(
+                    logging.INFO6,
                     "Tesla auth form fetch failed, attempt: " + str(attempt),
                 )
 
             time.sleep(3)
         else:
-            self.master.debugLog(
-                2,
-                "TeslaAPI",
-                "Wasn't able to find authentication form after " + str(attempt) + " attempts",
+            logger.log(
+                logging.INFO2,
+                "Wasn't able to find authentication form after "
+                + str(attempt)
+                + " attempts",
             )
-            return 0
+            return "Phase1Error"
 
         csrf = re.search(r'name="_csrf".+value="([^"]+)"', resp.text).group(1)
-        transaction_id = re.search(r'name="transaction_id".+value="([^"]+)"', resp.text).group(1)
+        transaction_id = re.search(
+            r'name="transaction_id".+value="([^"]+)"', resp.text
+        ).group(1)
+
+        if not csrf or not transaction_id:
+            # These two parameters are required for Phase 1 (Authentication) auth
+            # If they are missing, we raise an appropriate error to the user's attention
+            return "Phase1Error"
 
         data = {
             "_csrf": csrf,
@@ -131,30 +142,40 @@ class TeslaAPI:
             "credential": password,
         }
 
+        return self.apiLoginPhaseTwo(data)
+
+    def apiLoginPhaseTwo(self, data):
+
         for attempt in range(self.maxLoginRetries):
-            resp = session.post(
-                self.authURL, headers=headers, params=params, data=data, allow_redirects=False
+            resp = self.session.post(
+                self.authURL, params=self.params, data=data, allow_redirects=False
             )
             if resp.ok and (resp.status_code == 302 or "<title>" in resp.text):
-                self.master.debugLog(
-                    2,
-                    "TeslaAPI",
+                logger.log(
+                    logging.INFO2,
                     "Posted auth form successfully after " + str(attempt) + " attempts",
                 )
                 break
             time.sleep(3)
         else:
-            self.master.debugLog(
-                2,
-                "TeslaAPI",
-                "Wasn't able to post authentication form after " + str(attempt) + " attempts",
+            logger.log(
+                logging.INFO2,
+                "Wasn't able to post authentication form after "
+                + str(attempt)
+                + " attempts",
             )
+            return "Phase2Error"
 
-        code = parse_qs(resp.headers["location"])[self.callbackURL + "?code"]
-    
-        headers = {"user-agent": self.browserUA, 
-                   "x-tesla-user-agent": self.teslaUA}
-        payload = {
+        if resp.status_code == 200 and "/mfa/verify" in resp.text:
+            # This account is using MFA, redirect to MFA code entry page
+            return "MFA/" + str(data["transaction_id"])
+
+        try:
+            code = parse_qs(resp.headers["location"])[self.callbackURL + "?code"]
+        except KeyError:
+            return "Phase2ErrorTip"
+
+        data = {
             "grant_type": "authorization_code",
             "client_id": "ownerapi",
             "code_verifier": self.verifier.decode("utf-8"),
@@ -162,29 +183,32 @@ class TeslaAPI:
             "redirect_uri": self.callbackURL,
         }
 
-        resp = session.post("https://auth.tesla.com/oauth2/v3/token", headers=headers, json=payload)
+        resp = self.session.post("https://auth.tesla.com/oauth2/v3/token", json=data)
         access_token = resp.json()["access_token"]
 
-        headers["authorization"] = "bearer " + access_token
-        payload = {
+        headers = {"authorization": "bearer " + access_token}
+
+        data = {
             "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
             "client_id": self.clientID,
         }
-        resp = session.post("https://owner-api.teslamotors.com/oauth/token", headers=headers, json=payload)
+        resp = self.session.post(
+            "https://owner-api.teslamotors.com/oauth/token", headers=headers, json=data
+        )
         try:
             self.setCarApiBearerToken(resp.json()["access_token"])
             self.setCarApiRefreshToken(resp.json()["refresh_token"])
             self.setCarApiTokenExpireTime(time.time() + resp.json()["expires_in"])
             self.master.queue_background_task({"cmd": "saveSettings"})
+            return True
 
         except KeyError:
-            self.master.debugLog(
-                2,
-                "TeslaAPI",
+            logger.log(
+                logging.INFO2,
                 "ERROR: Can't access Tesla car via API.  Please log in again via web interface.",
             )
             self.updateCarApiLastErrorTime()
-            # Instead of just setting carApiLastErrorTime, erase tokens to
+            # In addition to setting carApiLastErrorTime, erase tokens to
             # prevent further authorization attempts until user enters password
             # on web interface. I feel this is safer than trying to log in every
             # ten minutes with a bad token because Tesla might decide to block
@@ -192,14 +216,12 @@ class TeslaAPI:
             self.setCarApiBearerToken("")
             self.setCarApiRefreshToken("")
             self.master.queue_background_task({"cmd": "saveSettings"})
+            return False
 
     def apiRefresh(self):
         # Refresh tokens expire in 45
         # days when first issued, so we'll get a new token every 15 days.
-        headers = {
-            "accept": "application/json",
-            "Content-Type": "application/json",
-        }
+        headers = {"accept": "application/json", "Content-Type": "application/json"}
         data = {
             "client_id": self.clientID,
             "client_secret": self.clientSecret,
@@ -207,24 +229,28 @@ class TeslaAPI:
             "refresh_token": self.getCarApiRefreshToken(),
         }
         req = None
+        now = time.time()
         try:
             req = requests.post(self.refreshURL, headers=headers, json=data)
-            self.master.debugLog(2, "TeslaAPI", "Car API request" + str(req))
-            apiResponseDict = self.json.loads(req.text)
-        except:
+            logger.log(logging.INFO2, "Car API request" + str(req))
+            apiResponseDict = json.loads(req.text)
+        except requests.exceptions.RequestException:
+            pass
+        except ValueError:
+            pass
+        except json.decoder.JSONDecodeError:
             pass
 
         try:
-            self.master.debugLog(
-                4, "TeslaAPI", "Car API auth response" + str(apiResponseDict)
-            )
+            logger.log(logging.INFO4, "Car API auth response" + str(apiResponseDict))
             self.setCarApiBearerToken(apiResponseDict["access_token"])
             self.setCarApiRefreshToken(apiResponseDict["refresh_token"])
             self.setCarApiTokenExpireTime(now + apiResponseDict["expires_in"])
+            self.master.queue_background_task({"cmd": "saveSettings"})
 
         except KeyError:
-            self.master.debugLog(
-                2,
+            logger.log(
+                logging.INFO2,
                 "TeslaAPI",
                 "ERROR: Can't access Tesla car via API.  Please log in again via web interface.",
             )
@@ -242,6 +268,7 @@ class TeslaAPI:
         self, email=None, password=None, charge=None, applyLimit=None
     ):
         now = time.time()
+        needSleep = False
         apiResponseDict = {}
 
         if self.getCarApiRetryRemaining():
@@ -256,18 +283,16 @@ class TeslaAPI:
             # enough to clear the blacklist. So at this point it seems Tesla has
             # accepted that third party apps use the API and deals with bad behavior
             # automatically.
-            self.master.debugLog(
-                6,
-                "TeslaAPI",
+            logger.log(
+                logging.INFO6,
                 "Car API disabled for "
                 + str(self.getCarApiRetryRemaining())
                 + " more seconds due to recent error.",
             )
             return False
         else:
-            self.master.debugLog(
-                8,
-                "TeslaAPI",
+            logger.log(
+                logging.INFO8,
                 "Entering car_api_available - next step is to query Tesla API",
             )
 
@@ -287,12 +312,21 @@ class TeslaAPI:
                     "grant_type": "refresh_token",
                     "refresh_token": self.getCarApiRefreshToken(),
                 }
-                self.master.debugLog(8, "TeslaAPI", "Attempting token refresh")
+                logger.log(logging.INFO8, "Attempting token refresh")
                 self.apiRefresh()
 
-            elif email != None and password != None:
-                self.master.debugLog(8, "TeslaAPI", "Attempting password auth")
-                self.apiLogin(email, password)
+            elif email is not None and password is not None:
+                logger.log(logging.INFO8, "Attempting password auth")
+                ret = self.apiLogin(email, password)
+
+                # If any string is returned, we redirect to it. This helps with MFA login flow
+                if (
+                    str(ret) != "True"
+                    and str(ret) != "False"
+                    and str(ret) != ""
+                    and str(ret) != "None"
+                ):
+                    return ret
 
         if self.getCarApiBearerToken() != "":
             if self.getVehicleCount() < 1:
@@ -303,33 +337,29 @@ class TeslaAPI:
                 }
                 try:
                     req = requests.get(url, headers=headers)
-                    self.master.debugLog(
-                        8, "TeslaAPI", "Car API cmd vehicles " + str(req)
-                    )
-                    apiResponseDict = self.json.loads(req.text)
-                except:
-                    self.master.debugLog(
-                        1, "TeslaAPI", "Failed to make API call " + url
-                    )
-                    self.master.debugLog(6, "TeslaAPI", "Response: " + req.text)
+                    logger.log(logging.INFO8, "Car API cmd vehicles " + str(req))
+                    apiResponseDict = json.loads(req.text)
+                except requests.exceptions.RequestException:
+                    logger.info("Failed to make API call " + url)
+                    logger.log(logging.INFO6, "Response: " + req.text)
+                    pass
+                except json.decoder.JSONDecodeError:
+                    logger.info("Could not parse JSON result from " + url)
+                    logger.log(logging.INFO6, "Response: " + req.text)
                     pass
 
                 try:
-                    self.master.debugLog(
-                        10,
-                        "TeslaAPI",
-                        "Car API vehicle list" + str(apiResponseDict) + "\n",
-                    )
+                    logger.debug("Car API vehicle list" + str(apiResponseDict) + "\n")
 
                     for i in range(0, apiResponseDict["count"]):
                         self.addVehicle(apiResponseDict["response"][i])
+                    self.resetCarApiLastErrorTime()
                 except (KeyError, TypeError):
                     # This catches cases like trying to access
                     # apiResponseDict['response'] when 'response' doesn't exist in
                     # apiResponseDict.
-                    self.master.debugLog(
-                        2,
-                        "TeslaAPI",
+                    logger.log(
+                        logging.INFO2,
                         "ERROR: Can't get list of vehicles via Tesla car API.  Will try again in "
                         + str(self.getCarApiErrorRetryMins())
                         + " minutes.",
@@ -337,17 +367,15 @@ class TeslaAPI:
                     self.updateCarApiLastErrorTime()
                     return False
 
-            needSleep = False
             if self.getVehicleCount() > 0 and (charge or applyLimit):
                 # Wake cars if needed
                 for vehicle in self.getCarApiVehicles():
-                    if charge == True and vehicle.stopAskingToStartCharging:
+                    if charge is True and vehicle.stopAskingToStartCharging:
                         # Vehicle is in a state (complete or charging) already
                         # which doesn't make sense for us to keep requesting it
                         # to start charging, so we will stop.
-                        self.master.debugLog(
-                            11,
-                            "TeslaAPI",
+                        logger.log(
+                            logging.DEBUG2,
                             "Don't repeatedly request API to charge "
                             + vehicle.name
                             + ", because vehicle.stopAskingToStartCharging "
@@ -355,10 +383,9 @@ class TeslaAPI:
                         )
                         continue
 
-                    if applyLimit == True and vehicle.stopTryingToApplyLimit:
-                        self.master.debugLog(
-                            11,
-                            "TeslaAPI",
+                    if applyLimit is True and vehicle.stopTryingToApplyLimit:
+                        logger.log(
+                            logging.DEBUG2,
                             "Don't wake "
                             + vehicle.name
                             + " to set the charge limit - it has already been set",
@@ -369,9 +396,8 @@ class TeslaAPI:
                         # It's been under carApiErrorRetryMins minutes since the car
                         # API generated an error on this vehicle. Don't send it more
                         # commands yet.
-                        self.master.debugLog(
-                            11,
-                            "TeslaAPI",
+                        logger.log(
+                            logging.DEBUG2,
                             "Don't send commands to "
                             + vehicle.name
                             + " because it returned an error in the last "
@@ -384,12 +410,10 @@ class TeslaAPI:
                         continue
 
                     if now - vehicle.lastAPIAccessTime <= vehicle.delayNextWakeAttempt:
-                        self.master.debugLog(
-                            10,
-                            "TeslaAPI",
+                        logger.debug(
                             "car_api_available returning False because we are still delaying "
                             + str(vehicle.delayNextWakeAttempt)
-                            + " seconds after the last failed wake attempt.",
+                            + " seconds after the last failed wake attempt."
                         )
                         return False
 
@@ -405,21 +429,18 @@ class TeslaAPI:
                     }
                     try:
                         req = requests.post(url, headers=headers)
-                        self.master.debugLog(
-                            8, "TeslaAPI", "Car API cmd wake_up" + str(req)
-                        )
-                        apiResponseDict = self.json.loads(req.text)
-                    except:
+                        logger.log(logging.INFO8, "Car API cmd wake_up" + str(req))
+                        apiResponseDict = json.loads(req.text)
+                    except requests.exceptions.RequestException:
+                        pass
+                    except json.decoder.JSONDecodeError:
                         pass
 
                     state = "error"
-                    self.master.debugLog(
-                        10,
-                        "TeslaAPI",
-                        "Car API wake car response" + str(apiResponseDict),
-                    )
+                    logger.debug("Car API wake car response" + str(apiResponseDict))
                     try:
                         state = apiResponseDict["response"]["state"]
+                        self.resetCarApiLastErrorTime()
 
                     except (KeyError, TypeError):
                         # This catches unexpected cases like trying to access
@@ -445,6 +466,7 @@ class TeslaAPI:
                             vehicle.firstWakeAttemptTime = now
 
                         if state == "asleep" or state == "waking":
+                            self.resetCarApiLastErrorTime()
                             if now - vehicle.firstWakeAttemptTime <= 10 * 60:
                                 # http://visibletesla.com has a 'force wakeup' mode
                                 # that sends wake_up messages once every 5 seconds
@@ -478,6 +500,7 @@ class TeslaAPI:
                                 # reaching this point later.
                                 vehicle.delayNextWakeAttempt = 15 * 60
                         elif state == "offline":
+                            self.resetCarApiLastErrorTime()
                             # In any case it can make sense to wait 5 seconds here.
                             # I had the issue, that the next command was sent too
                             # fast and only a reboot of the Raspberry resultet in
@@ -525,52 +548,27 @@ class TeslaAPI:
                                 # don't have the charger plugged in.
                         else:
                             # Handle 'error' state.
-                            if now - vehicle.firstWakeAttemptTime <= 60 * 60:
-                                # We've tried to wake the car for less than an
-                                # hour.
-                                foundKnownError = False
-                                if "error" in apiResponseDict:
-                                    error = apiResponseDict["error"]
-                                    for knownError in self.getCarApiTransientErrors():
-                                        if knownError == error[0 : len(knownError)]:
-                                            foundKnownError = True
-                                            break
-
-                                if foundKnownError:
-                                    # I see these errors often enough that I think
-                                    # it's worth re-trying in 1 minute rather than
-                                    # waiting 5 minutes for retry in the standard
-                                    # error handler.
-                                    vehicle.delayNextWakeAttempt = 60
-                                else:
-                                    # by the API servers being down, car being out of
-                                    # range, or by something I can't anticipate. Try
-                                    # waking the car every 5 mins.
-                                    vehicle.delayNextWakeAttempt = 5 * 60
-                            else:
+                            self.updateCarApiLastErrorTime()
+                            if now - vehicle.firstWakeAttemptTime >= 60 * 60:
                                 # Car hasn't woken for over an hour. Try again
                                 # in 15 minutes. We'll show an error about this
                                 # later.
                                 vehicle.delayNextWakeAttempt = 15 * 60
 
                         if state == "error":
-                            self.master.debugLog(
-                                1,
-                                "TeslaAPI",
+                            logger.info(
                                 "Car API wake car failed with unknown response.  "
                                 + "Will try again in "
                                 + str(vehicle.delayNextWakeAttempt)
-                                + " seconds.",
+                                + " seconds."
                             )
                         else:
-                            self.master.debugLog(
-                                1,
-                                "TeslaAPI",
+                            logger.info(
                                 "Car API wake car failed.  State remains: '"
                                 + state
                                 + "'.  Will try again in "
                                 + str(vehicle.delayNextWakeAttempt)
-                                + " seconds.",
+                                + " seconds."
                             )
 
                     if (
@@ -579,28 +577,24 @@ class TeslaAPI:
                     ):
                         # It should never take over an hour to wake a car.  If it
                         # does, ask user to report an error.
-                        self.master.debugLog(
-                            1,
-                            "TeslaAPI",
+                        logger.info(
                             "ERROR: We have failed to wake a car from '"
                             + state
                             + "' state for %.1f hours.\n"
-                            "Please private message user CDragon at "
-                            "http://teslamotorsclub.com with a copy of this error. "
+                            "Please file an issue at https://github.com/ngardiner/TWCManager/. "
                             "Also include this: %s"
                             % (
                                 ((now - vehicle.firstWakeAttemptTime) / 60 / 60),
                                 str(apiResponseDict),
-                            ),
+                            )
                         )
 
         if (
             now - self.getCarApiLastErrorTime() < (self.getCarApiErrorRetryMins() * 60)
             or self.getCarApiBearerToken() == ""
         ):
-            self.master.debugLog(
-                8,
-                "TeslaAPI",
+            logger.log(
+                logging.INFO8,
                 "car_api_available returning False because of recent carApiLasterrorTime "
                 + str(now - self.getCarApiLastErrorTime())
                 + " or empty carApiBearerToken '"
@@ -613,7 +607,7 @@ class TeslaAPI:
         # car API commands and that we successfully got a list of vehicles.
         # True does not indicate that any vehicle is actually awake and ready
         # for commands.
-        self.master.debugLog(8, "TeslaAPI", "car_api_available returning True")
+        logger.log(logging.INFO8, "car_api_available returning True")
 
         if needSleep:
             # If you send charge_start/stop less than 1 second after calling
@@ -630,15 +624,13 @@ class TeslaAPI:
     def is_location_home(self, lat, lon):
 
         if self.master.getHomeLatLon()[0] == 10000:
-            self.master.debugLog(
-                1,
-                "TeslaAPI",
+            logger.info(
                 "Home location for vehicles has never been set.  "
                 + "We'll assume home is where we found the first vehicle currently parked.  "
                 + "Home set to lat="
                 + str(lat)
                 + ", lon="
-                + str(lon),
+                + str(lon)
             )
             self.master.setHomeLat(lat)
             self.master.setHomeLon(lon)
@@ -679,32 +671,38 @@ class TeslaAPI:
             for vehicle in self.getCarApiVehicles():
                 vehicle.stopAskingToStartCharging = False
 
-        if now - self.getLastStartOrStopChargeTime() < 60:
+        if (now - self.getLastStartOrStopChargeTime() < 60) or (
+            now - self.carApiLastStartOrStopFlipTime < self.startStopDelay
+            and charge != self.carApiLastStartOrStopChargeAction
+        ):
+            if self.carApiLastStartOrStopChargeAction != charge:
+                # If we're repeatedly changing our minds about whether to charge or not,
+                # stay how we are until the system settles down.
+                self.carApiLastStartOrStopChargeAction = charge
+                self.carApiLastStartOrStopFlipTime = now
+
             # Don't start or stop more often than once a minute
-            self.master.debugLog(
-                11,
-                "TeslaAPI",
-                "car_api_charge return because under 60 sec since last carApiLastStartOrStopChargeTime",
+            logger.log(
+                logging.DEBUG2,
+                "car_api_charge return because not long enough since last carApiLastStartOrStopChargeTime",
             )
             return "error"
 
-        if self.car_api_available(charge=charge) == False:
-            self.master.debugLog(
-                8,
-                "TeslaAPI",
+        if self.car_api_available(charge=charge) is False:
+            logger.log(
+                logging.INFO8,
                 "car_api_charge return because car_api_available() == False",
             )
             return "error"
 
         startOrStop = "start" if charge else "stop"
         result = "success"
-        self.master.debugLog(8, "TeslaAPI", "startOrStop is set to " + str(startOrStop))
+        logger.log(logging.INFO8, "startOrStop is set to " + str(startOrStop))
 
         for vehicle in self.getCarApiVehicles():
             if charge and vehicle.stopAskingToStartCharging:
-                self.master.debugLog(
-                    8,
-                    "TeslaAPI",
+                logger.log(
+                    logging.INFO8,
                     "Don't charge "
                     + vehicle.name
                     + " because vehicle.stopAskingToStartCharging == True",
@@ -728,6 +726,10 @@ class TeslaAPI:
             # more than once per minute.
             self.updateLastStartOrStopChargeTime()
 
+            if self.carApiLastStartOrStopChargeAction != charge:
+                self.carApiLastStartOrStopChargeAction = charge
+                self.carApiLastStartOrStopFlipTime = now
+
             if (
                 self.config["config"]["onlyChargeMultiCarsAtHome"]
                 and self.getVehicleCount() > 1
@@ -735,19 +737,17 @@ class TeslaAPI:
                 # When multiple cars are enrolled in the car API, only start/stop
                 # charging cars parked at home.
 
-                if vehicle.update_location(3600) == False:
+                if vehicle.update_location(3600) is False:
                     result = "error"
                     continue
 
                 if not vehicle.atHome:
                     # Vehicle is not at home, so don't change its charge state.
-                    self.master.debugLog(
-                        1,
-                        "TeslaAPI",
+                    logger.info(
                         vehicle.name
                         + " is not at home.  Do not "
                         + startOrStop
-                        + " charge.",
+                        + " charge."
                     )
                     continue
 
@@ -772,19 +772,19 @@ class TeslaAPI:
             for _ in range(0, 3):
                 try:
                     req = requests.post(url, headers=headers)
-                    self.master.debugLog(
-                        8,
-                        "TeslaAPI",
+                    logger.log(
+                        logging.INFO8,
                         "Car API cmd charge_" + startOrStop + " " + str(req),
                     )
-                    apiResponseDict = self.json.loads(req.text)
-                except:
+                    apiResponseDict = json.loads(req.text)
+                except requests.exceptions.RequestException:
+                    pass
+                except json.decoder.JSONDecodeError:
                     pass
 
                 try:
-                    self.master.debugLog(
-                        4,
-                        "TeslaAPI",
+                    logger.log(
+                        logging.INFO4,
                         vehicle.name
                         + ": "
                         + startOrStop
@@ -811,38 +811,18 @@ class TeslaAPI:
                     #   {'error': 'operation_timedout for txid `4853e3ad74de12733f8cc957c9f60040`}', 'response': None, 'error_description': ''}
                     # Start or stop charging success:
                     #   {'response': {'result': True, 'reason': ''}}
-                    if apiResponseDict["response"] == None:
-                        if "error" in apiResponseDict:
-                            foundKnownError = False
-                            error = apiResponseDict["error"]
-                            for knownError in self.getCarApiTransientErrors():
-                                if knownError == error[0 : len(knownError)]:
-                                    # I see these errors often enough that I think
-                                    # it's worth re-trying in 1 minute rather than
-                                    # waiting carApiErrorRetryMins minutes for retry
-                                    # in the standard error handler.
-                                    self.master.debugLog(
-                                        1,
-                                        "TeslaAPI",
-                                        "Car API returned '"
-                                        + error
-                                        + "' when trying to start charging.  Try again in 1 minute.",
-                                    )
-                                    time.sleep(60)
-                                    foundKnownError = True
-                                    break
-                            if foundKnownError:
-                                continue
-
-                        # This generally indicates a significant error like 'vehicle
+                    if apiResponseDict["response"] is None:
+                        # This generally indicates an error like 'vehicle
                         # unavailable', but it's not something I think the caller can do
                         # anything about, so return generic 'error'.
                         result = "error"
                         # Don't send another command to this vehicle for
                         # carApiErrorRetryMins mins.
-                        vehicle.lastErrorTime = now
-                    elif apiResponseDict["response"]["result"] == False:
-                        if charge:
+                        self.updateCarApiLastErrorTime(vehicle)
+                    else:
+                        if apiResponseDict["response"]["result"] == True:
+                            self.resetCarApiLastErrorTime(vehicle)
+                        elif charge:
                             reason = apiResponseDict["response"]["reason"]
                             if reason == "complete" or reason == "charging":
                                 # We asked the car to charge, but it responded that
@@ -856,79 +836,80 @@ class TeslaAPI:
                                 # Remember, this only means at least one car in the
                                 # list wants us to stop asking and we don't know
                                 # which car in the list is connected to our TWC.
-                                self.master.debugLog(
-                                    1,
-                                    "TeslaAPI",
+                                logger.info(
                                     vehicle.name
-                                    + " is done charging or already trying to charge.  Stop asking to start charging.",
+                                    + " is done charging or already trying to charge.  Stop asking to start charging."
                                 )
                                 vehicle.stopAskingToStartCharging = True
+                                self.resetCarApiLastErrorTime(vehicle)
+                            elif reason == "could_not_wake_buses":
+                                # This error often happens if you call
+                                # charge_start too quickly after another command
+                                # like drive_state. Even if you delay 5 seconds
+                                # between the commands, this error still comes
+                                # up occasionally. Retrying often succeeds, so
+                                # wait 5 secs and retry.
+                                # If all retries fail, we'll try again in a
+                                # minute because we set
+                                # carApiLastStartOrStopChargeTime = now earlier.
+                                time.sleep(5)
+                                continue
                             else:
-                                # Car was unable to charge for some other reason, such
-                                # as 'could_not_wake_buses'.
-                                if reason == "could_not_wake_buses":
-                                    # This error often happens if you call
-                                    # charge_start too quickly after another command
-                                    # like drive_state. Even if you delay 5 seconds
-                                    # between the commands, this error still comes
-                                    # up occasionally. Retrying often succeeds, so
-                                    # wait 5 secs and retry.
-                                    # If all retries fail, we'll try again in a
-                                    # minute because we set
-                                    # carApiLastStartOrStopChargeTime = now earlier.
-                                    time.sleep(5)
-                                    continue
-                                else:
-                                    # Start or stop charge failed with an error I
-                                    # haven't seen before, so wait
-                                    # carApiErrorRetryMins mins before trying again.
-                                    self.master.debugLog(
-                                        1,
-                                        "TeslaAPI",
-                                        'ERROR "'
-                                        + reason
-                                        + '" when trying to '
-                                        + startOrStop
-                                        + " car charging via Tesla car API.  Will try again later."
-                                        + "\nIf this error persists, please private message user CDragon at http://teslamotorsclub.com with a copy of this error.",
-                                    )
-                                    result = "error"
-                                    vehicle.lastErrorTime = now
+                                # Start charge failed with an error I
+                                # haven't seen before, so wait
+                                # carApiErrorRetryMins mins before trying again.
+                                logger.info(
+                                    'ERROR "'
+                                    + reason
+                                    + '" when trying to '
+                                    + startOrStop
+                                    + " car charging via Tesla car API.  Will try again later."
+                                    + "\nIf this error persists, please file an issue at https://github.com/ngardiner/TWCManager/ with a copy of this error.",
+                                )
+                                result = "error"
+                                self.updateCarApiLastErrorTime(vehicle)
+                        else:
+                            # Stop charge failed with an error I
+                            # haven't seen before, so wait
+                            # carApiErrorRetryMins mins before trying again.
+                            reason = apiResponseDict["response"]["reason"]
+                            logger.info(
+                                'ERROR "'
+                                + reason
+                                + '" when trying to '
+                                + startOrStop
+                                + " car charging via Tesla car API.  Will try again later."
+                                + "\nIf this error persists, please file an issue at https://github.com/ngardiner/TWCManager/ with a copy of this error.",
+                            )
+                            result = "error"
+                            self.updateCarApiLastErrorTime(vehicle)
 
                 except (KeyError, TypeError):
                     # This catches cases like trying to access
                     # apiResponseDict['response'] when 'response' doesn't exist in
                     # apiResponseDict.
-                    self.master.debugLog(
-                        1,
-                        "TeslaAPI",
+                    logger.info(
                         "ERROR: Failed to "
                         + startOrStop
-                        + " car charging via Tesla car API.  Will try again later.",
+                        + " car charging via Tesla car API.  Will try again later."
                     )
-                    vehicle.lastErrorTime = now
+                    self.updateCarApiLastErrorTime(vehicle)
                 break
 
-        if (
-            self.config["config"]["debugLevel"] >= 1
-            and self.getLastStartOrStopChargeTime() == now
-        ):
-            self.master.debugLog(
-                1, "TeslaAPI", "Car API " + startOrStop + " charge result: " + result
-            )
+        if self.getLastStartOrStopChargeTime() == now:
+            logger.info("Car API " + startOrStop + " charge result: " + result)
 
         return result
 
     def applyChargeLimit(self, limit, checkArrival=False, checkDeparture=False):
 
         if limit != -1 and (limit < 50 or limit > 100):
-            self.master.debugLog(8, "TeslaAPI", "applyChargeLimit skipped")
+            logger.log(logging.INFO8, "applyChargeLimit skipped")
             return "error"
 
-        if self.car_api_available() == False:
-            self.master.debugLog(
-                8,
-                "TeslaAPI",
+        if not self.car_api_available():
+            logger.log(
+                logging.INFO8,
                 "applyChargeLimit return because car_api_available() == False",
             )
             return "error"
@@ -940,9 +921,8 @@ class TeslaAPI:
             and now - self.carApiLastChargeLimitApplyTime < 60
         ):
             # Don't change limits more often than once a minute
-            self.master.debugLog(
-                11,
-                "TeslaAPI",
+            logger.log(
+                logging.DEBUG2,
                 "applyChargeLimit return because under 60 sec since last carApiLastChargeLimitApplyTime",
             )
             return "error"
@@ -975,27 +955,24 @@ class TeslaAPI:
             ) or (not wasAtHome and checkArrival):
                 vehicle.stopTryingToApplyLimit = False
 
-        if needToWake and self.car_api_available(applyLimit=True) == False:
-            self.master.debugLog(
-                8,
-                "TeslaAPI",
+        if needToWake and self.car_api_available(applyLimit=True) is False:
+            logger.log(
+                logging.INFO8,
                 "applyChargeLimit return because car_api_available() == False",
             )
             return "error"
 
         if self.lastChargeLimitApplied != limit:
             if limit != -1:
-                self.master.debugLog(
-                    2,
-                    "TeslaAPI",
+                logger.log(
+                    logging.INFO2,
                     "Attempting to apply limit of "
                     + str(limit)
                     + "% to all vehicles at home",
                 )
             else:
-                self.master.debugLog(
-                    2,
-                    "TeslaAPI",
+                logger.log(
+                    logging.INFO2,
                     "Attempting to restore charge limits for all vehicles at home",
                 )
             self.lastChargeLimitApplied = limit
@@ -1017,10 +994,10 @@ class TeslaAPI:
                 continue
 
             if not wasAtHome and located and vehicle.atHome:
-                self.master.debugLog(2, "TeslaAPI", vehicle.name + " has arrived")
+                logger.log(logging.INFO2, vehicle.name + " has arrived")
                 outside = vehicle.chargeLimit
             elif wasAtHome and located and not vehicle.atHome:
-                self.master.debugLog(2, "TeslaAPI", vehicle.name + " has departed")
+                logger.log(logging.INFO2, vehicle.name + " has departed")
                 forgetVehicle = True
 
             if limit == -1 or (located and not vehicle.atHome):
@@ -1029,9 +1006,8 @@ class TeslaAPI:
                 # If lastApplied == -1, the manual-change path is always selected.
                 if wasAtHome and vehicle.chargeLimit == lastApplied:
                     if vehicle.apply_charge_limit(outside):
-                        self.master.debugLog(
-                            2,
-                            "TeslaAPI",
+                        logger.log(
+                            logging.INFO2,
                             "Restoring "
                             + vehicle.name
                             + " to charge limit "
@@ -1053,9 +1029,8 @@ class TeslaAPI:
             else:
                 if vehicle.chargeLimit != limit:
                     if vehicle.apply_charge_limit(limit):
-                        self.master.debugLog(
-                            2,
-                            "TeslaAPI",
+                        logger.log(
+                            logging.INFO2,
                             "Set "
                             + vehicle.name
                             + " to charge limit of "
@@ -1085,8 +1060,11 @@ class TeslaAPI:
     def getCarApiBearerToken(self):
         return self.carApiBearerToken
 
-    def getCarApiErrorRetryMins(self):
-        return self.carApiErrorRetryMins
+    def getCarApiErrorRetryMins(self, vehicle=None):
+        errorCount = self.errorCount
+        if vehicle:
+            errorCount = max(vehicle.errorCount, errorCount)
+        return pow(2, min(max(errorCount - 1, 0), 6))
 
     def getCarApiLastErrorTime(self):
         return self.carApiLastErrorTime
@@ -1094,7 +1072,7 @@ class TeslaAPI:
     def getCarApiRefreshToken(self):
         return self.carApiRefreshToken
 
-    def getCarApiRetryRemaining(self, vehicleLast=0):
+    def getCarApiRetryRemaining(self, vehicle=None):
         # Calculate the amount of time remaining until the API can be queried
         # again. This is the api backoff time minus the difference between now
         # and the last error time
@@ -1102,20 +1080,19 @@ class TeslaAPI:
         # The optional vehicleLast parameter allows passing the last error time
         # for an individual vehicle, rather than the entire API.
         lastError = self.getCarApiLastErrorTime()
-        if vehicleLast > 0:
-            lastError = vehicleLast
+        if vehicle:
+            lastError = max(vehicle.lastErrorTime, lastError)
 
         if lastError == 0:
             return 0
         else:
-            backoff = self.getCarApiErrorRetryMins() * 60
+            backoff = self.getCarApiErrorRetryMins(vehicle) * 60
             lasterrortime = time.time() - lastError
             if lasterrortime >= backoff:
                 return 0
             else:
-                self.master.debugLog(
-                    11,
-                    "TeslaAPI",
+                logger.log(
+                    logging.DEBUG2,
                     "Backoff is "
                     + str(backoff)
                     + ", lasterror delta is "
@@ -1124,9 +1101,6 @@ class TeslaAPI:
                     + str(lastError),
                 )
                 return int(backoff - lasterrortime)
-
-    def getCarApiTransientErrors(self):
-        return self.carApiTransientErrors
 
     def getCarApiTokenExpireTime(self):
         return self.carApiTokenExpireTime
@@ -1141,20 +1115,63 @@ class TeslaAPI:
     def getCarApiVehicles(self):
         return self.carApiVehicles
 
+    def getMFADevices(self, transaction_id):
+        # Requests a list of devices we can use for MFA
+        url = f("https://auth.tesla.com/oauth2/v3/authorize/mfa/factors?transaction_id={transaction_id}")
+        resp = self.session.get(url)
+        try:
+            content = json.loads(resp.text)
+        except ValueError:
+            return False
+        except json.decoder.JSONDecodeError:
+            return False
+
+        if resp.status_code == 200:
+            return content["data"]
+        elif resp.status_code == 400:
+            logger.error("The following error was returned when attempting to fetch MFA devices for Tesla Login:" + str(content.get("error", "")))
+        else:
+            logger.error("An unexpected error code (" + str(resp.status) + ") was returned when attempting to fetch MFA devices for Tesla Login")
+
+    def mfaLogin(self, transactionID, mfaDevice, mfaCode):
+        data = {
+            "transaction_id": transactionID, 
+            "factor_id": mfaDevice, 
+            "passcode": str(mfaCode).rjust(6, '0')
+        }
+        url = "https://auth.tesla.com/oauth2/v3/authorize/mfa/verify"
+        resp = self.session.post(url, json=data)
+
+        try:
+            jsonData = json.loads(resp.text)
+        except ValueError:
+            return False
+        except json.decoder.JSONDecodeError:
+            return False
+
+        if "error" in resp.text or not jsonData.get("data", None) or not jsonData["data"].get("approved", None) or not jsonData["data"].get("valid", None):
+            if jsonData.get("error", {}).get("message", None) == "Invalid Attributes: Your passcode should be six digits.":
+                return "TokenLengthError"
+            else:
+                return "TokenFail"
+        else:
+            data = {"transaction_id": transactionID}
+            return self.apiLoginPhaseTwo(data)
+
+    def resetCarApiLastErrorTime(self, vehicle=None):
+        self.carApiLastErrorTime = 0
+        if vehicle:
+            vehicle.lastErrorTime = 0
+            vehicle.errorCount = 0
+        self.errorCount = 0
+        return True
+
     def setCarApiBearerToken(self, token=None):
         if token:
             self.carApiBearerToken = token
             return True
         else:
             return False
-
-    def setCarApiErrorRetryMins(self, mins):
-        self.carApiErrorRetryMins = mins
-        return True
-
-    def setCarApiLastErrorTime(self, tstamp):
-        self.carApiLastErrorTime = tstamp
-        return True
 
     def setCarApiRefreshToken(self, token):
         self.carApiRefreshToken = token
@@ -1164,17 +1181,22 @@ class TeslaAPI:
         self.carApiTokenExpireTime = value
         return True
 
-    def updateCarApiLastErrorTime(self):
+    def updateCarApiLastErrorTime(self, vehicle=None):
         timestamp = time.time()
-        self.master.debugLog(
-            8,
-            "TeslaAPI",
+        logger.log(
+            logging.INFO8,
             "updateCarApiLastErrorTime() called due to Tesla API Error. Updating timestamp from "
             + str(self.carApiLastErrorTime)
             + " to "
             + str(timestamp),
         )
-        self.carApiLastErrorTime = timestamp
+        if vehicle:
+            vehicle.lastErrorTime = timestamp
+            vehicle.errorCount += 1
+        else:
+            self.carApiLastErrorTime = timestamp
+            self.errorCount += 1
+
         return True
 
     def updateLastStartOrStopChargeTime(self):
@@ -1194,15 +1216,14 @@ class TeslaAPI:
     @property
     def minBatteryLevelAtHome(self):
         if time.time() - self.lastChargeCheck > self.chargeUpdateInterval:
-            self.master.queue_background_task({"cmd":"checkCharge"})
+            self.master.queue_background_task({"cmd": "checkCharge"})
         return min(
             [car.batteryLevel for car in self.carApiVehicles if car.atHome],
-            default=10000
+            default=10000,
         )
 
 
 class CarApiVehicle:
-
     import time
     import requests
     import json
@@ -1219,6 +1240,7 @@ class CarApiVehicle:
     delayNextWakeAttempt = 0
     lastLimitAttemptTime = 0
 
+    errorCount = 0
     lastErrorTime = 0
     lastDriveStatusTime = 0
     lastChargeStatusTime = 0
@@ -1235,18 +1257,16 @@ class CarApiVehicle:
     def __init__(self, json, carapi, config):
         self.carapi = carapi
         self.config = config
-        self.debugLevel = config["config"]["debugLevel"]
         self.ID = json["id"]
         self.VIN = json["vin"]
         self.name = json["display_name"]
 
     def ready(self):
-        if self.carapi.getCarApiRetryRemaining(self.lastErrorTime):
+        if self.carapi.getCarApiRetryRemaining(self):
             # It's been under carApiErrorRetryMins minutes since the car API
             # generated an error on this vehicle. Return that car is not ready.
-            self.carapi.master.debugLog(
-                8,
-                "TeslaAPI",
+            logger.log(
+                logging.INFO8,
                 self.name
                 + " not ready because of recent lastErrorTime "
                 + str(self.lastErrorTime),
@@ -1268,9 +1288,8 @@ class CarApiVehicle:
             self.firstWakeAttemptTime = 0
             return True
 
-        self.carapi.master.debugLog(
-            8,
-            "TeslaVehic",
+        logger.log(
+            logging.INFO8,
             self.name + " not ready because it wasn't woken in the last 2 minutes.",
         )
         return False
@@ -1283,7 +1302,7 @@ class CarApiVehicle:
 
     def get_car_api(self, url, checkReady=True, provesOnline=True):
         if checkReady and not self.ready():
-            return (False, None)
+            return False, None
 
         apiResponseDict = {}
 
@@ -1296,44 +1315,19 @@ class CarApiVehicle:
         for _ in range(0, 3):
             try:
                 req = requests.get(url, headers=headers)
-                self.carapi.master.debugLog(
-                    8, "TeslaVehic", "Car API cmd " + url + " " + str(req)
-                )
-                apiResponseDict = self.json.loads(req.text)
+                logger.log(logging.INFO8, "Car API cmd " + url + " " + str(req))
+                apiResponseDict = json.loads(req.text)
                 # This error can happen here as well:
                 #   {'response': {'reason': 'could_not_wake_buses', 'result': False}}
                 # This one is somewhat common:
                 #   {'response': None, 'error': 'vehicle unavailable: {:error=>"vehicle unavailable:"}', 'error_description': ''}
-            except:
+            except requests.exceptions.RequestException:
+                pass
+            except json.decoder.JSONDecodeError:
                 pass
 
             try:
-                self.carapi.master.debugLog(
-                    10, "TeslaVehic", "Car API vehicle status" + str(apiResponseDict)
-                )
-
-                if "error" in apiResponseDict:
-                    foundKnownError = False
-                    error = apiResponseDict["error"]
-
-                    for knownError in self.carapi.getCarApiTransientErrors():
-                        if knownError == error[0 : len(knownError)]:
-                            # I see these errors often enough that I think
-                            # it's worth re-trying in 1 minute rather than
-                            # waiting carApiErrorRetryMins minutes for retry
-                            # in the standard error handler.
-                            self.carapi.master.debugLog(
-                                1,
-                                "TeslaVehic",
-                                "Car API returned '"
-                                + error
-                                + "' when trying to get status.  Try again in 1 minute.",
-                            )
-                            time.sleep(60)
-                            foundKnownError = True
-                            break
-                    if foundKnownError:
-                        continue
+                logger.debug("Car API vehicle status" + str(apiResponseDict))
 
                 response = apiResponseDict["response"]
 
@@ -1351,20 +1345,21 @@ class CarApiVehicle:
                 # This catches cases like trying to access
                 # apiResponseDict['response'] when 'response' doesn't exist in
                 # apiResponseDict.
-                self.carapi.master.debugLog(
-                    1,
-                    "TeslaVehic",
+                logger.info(
                     "ERROR: Can't access vehicle status for "
                     + self.name
-                    + ".  Will try again later.",
+                    + ".  Will try again later."
                 )
-                self.lastErrorTime = time.time()
-                return (False, None)
+                self.carapi.updateCarApiLastErrorTime(self)
+                return False, None
 
             if provesOnline:
                 self.lastAPIAccessTime = time.time()
 
             return (True, response)
+        else:
+            self.carapi.updateCarApiLastErrorTime(self)
+            return (False, None)
 
     def update_location(self, cacheTime=60):
 
@@ -1376,7 +1371,11 @@ class CarApiVehicle:
         if now - self.lastDriveStatusTime < cacheTime:
             return True
 
-        (result, response) = self.get_car_api(url)
+        try:
+            (result, response) = self.get_car_api(url)
+        except TypeError:
+            logger.log(logging.error, "Got None response from get_car_api()")
+            return False
 
         if result:
             self.lastDriveStatusTime = now
@@ -1395,7 +1394,11 @@ class CarApiVehicle:
         if now - self.lastChargeStatusTime < 60:
             return True
 
-        (result, response) = self.get_car_api(url)
+        try:
+            (result, response) = self.get_car_api(url)
+        except TypeError:
+            logger.log(logging.error, "Got None response from get_car_api()")
+            return False
 
         if result:
             self.lastChargeStatusTime = time.time()
@@ -1413,11 +1416,11 @@ class CarApiVehicle:
 
         if (
             now - self.lastLimitAttemptTime <= 300
-            or self.carapi.getCarApiRetryRemaining(self.lastErrorTime)
+            or self.carapi.getCarApiRetryRemaining(self)
         ):
             return False
 
-        if self.ready() == False:
+        if self.ready() is False:
             return False
 
         self.lastLimitAttemptTime = now
@@ -1434,12 +1437,12 @@ class CarApiVehicle:
         for _ in range(0, 3):
             try:
                 req = requests.post(url, headers=headers, json=body)
-                self.carapi.master.debugLog(
-                    8, "TeslaVehic", "Car API cmd set_charge_limit " + str(req)
-                )
+                logger.log(logging.INFO8, "Car API cmd set_charge_limit " + str(req))
 
-                apiResponseDict = self.json.loads(req.text)
-            except:
+                apiResponseDict = json.loads(req.text)
+            except requests.exceptions.RequestException:
+                pass
+            except json.decoder.JSONDecodeError:
                 pass
 
             result = False
@@ -1453,36 +1456,15 @@ class CarApiVehicle:
                 # in apiResponseDict.
                 result = False
 
-            if result == True or reason == "already_set":
+            if result is True or reason == "already_set":
                 self.stopTryingToApplyLimit = True
                 self.lastAPIAccessTime = now
+                self.carapi.resetCarApiLastErrorTime(self)
                 return True
             elif reason == "could_not_wake_buses":
                 time.sleep(5)
                 continue
-            elif apiResponseDict["response"] == None:
-                if "error" in apiResponseDict:
-                    foundKnownError = False
-                    error = apiResponseDict["error"]
-                    for knownError in self.carapi.getCarApiTransientErrors():
-                        if knownError == error[0 : len(knownError)]:
-                            # I see these errors often enough that I think
-                            # it's worth re-trying in 1 minute rather than
-                            # waiting carApiErrorRetryMins minutes for retry
-                            # in the standard error handler.
-                            self.carapi.master.debugLog(
-                                1,
-                                "TeslaVehic",
-                                "Car API returned '"
-                                + error
-                                + "' when trying to set charge limit.  Try again in 1 minute.",
-                            )
-                            time.sleep(60)
-                            foundKnownError = True
-                            break
-                    if foundKnownError:
-                        continue
             else:
-                self.lastErrorTime = now
+                self.carapi.updateCarApiLastErrorTime(self)
 
         return False
