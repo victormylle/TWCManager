@@ -90,7 +90,8 @@ class TWCSlave:
                 heartbeatData[6],
             )
             if self.protocolVersion == 2:
-                debugOutput += " %02X%02X" % (heartbeatData[7], heartbeatData[8])
+                debugOutput += " %02X%02X" % (
+                    heartbeatData[7], heartbeatData[8])
             debugOutput += "  M"
 
             if not self.config["config"]["fakeMaster"]:
@@ -102,11 +103,13 @@ class TWCSlave:
             debugOutput += ": %02X %05.2f/%05.2fA %02X%02X" % (
                 self.masterHeartbeatData[0],
                 (
-                    ((self.masterHeartbeatData[3] << 8) + self.masterHeartbeatData[4])
+                    ((self.masterHeartbeatData[3] <<
+                      8) + self.masterHeartbeatData[4])
                     / 100
                 ),
                 (
-                    ((self.masterHeartbeatData[1] << 8) + self.masterHeartbeatData[2])
+                    ((self.masterHeartbeatData[1] <<
+                      8) + self.masterHeartbeatData[2])
                     / 100
                 ),
                 self.masterHeartbeatData[5],
@@ -136,9 +139,9 @@ class TWCSlave:
                 ampsUsed = float(m2.group(1))
                 if m1:
                     debugOutputCompare = (
-                        debugOutputCompare[0 : m2.start(1)]
-                        + self.lastHeartbeatDebugOutput[m1.start(1) : m1.end(1)]
-                        + debugOutputCompare[m2.end(1) :]
+                        debugOutputCompare[0: m2.start(1)]
+                        + self.lastHeartbeatDebugOutput[m1.start(1): m1.end(1)]
+                        + debugOutputCompare[m2.end(1):]
                     )
             if (
                 debugOutputCompare != self.lastHeartbeatDebugOutput
@@ -563,8 +566,10 @@ class TWCSlave:
         now = time.time()
         self.timeLastRx = now
 
-        self.reportedAmpsMax = ((heartbeatData[1] << 8) + heartbeatData[2]) / 100
-        self.reportedAmpsActual = ((heartbeatData[3] << 8) + heartbeatData[4]) / 100
+        self.reportedAmpsMax = (
+            (heartbeatData[1] << 8) + heartbeatData[2]) / 100
+        self.reportedAmpsActual = (
+            (heartbeatData[3] << 8) + heartbeatData[4]) / 100
         self.reportedState = heartbeatData[0]
 
         if self.reportedAmpsActual != self.reportedAmpsLast:
@@ -611,9 +616,12 @@ class TWCSlave:
             and self.reportedAmpsActual < 2
         ):
             self.master.getModuleByName("Policy").fireWebhook("stop")
-            self.master.queue_background_task({"cmd": "checkDeparture"}, 5 * 60)
-            self.master.queue_background_task({"cmd": "checkDeparture"}, 20 * 60)
-            self.master.queue_background_task({"cmd": "checkDeparture"}, 45 * 60)
+            self.master.queue_background_task(
+                {"cmd": "checkDeparture"}, 5 * 60)
+            self.master.queue_background_task(
+                {"cmd": "checkDeparture"}, 20 * 60)
+            self.master.queue_background_task(
+                {"cmd": "checkDeparture"}, 45 * 60)
 
         # Keep track of the amps the slave is actually using and the last time it
         # changed by more than 0.8A.
@@ -779,7 +787,8 @@ class TWCSlave:
             else:
                 # no cars are charging, and desiredAmpsOffered < minAmpsToOffer
                 # so we need to set desiredAmpsOffered to 0
-                logger.debug("no cars charging, setting desiredAmpsOffered to 0")
+                logger.debug(
+                    "no cars charging, setting desiredAmpsOffered to 0")
                 desiredAmpsOffered = 0
         else:
             # We can tell the TWC how much power to use in 0.01A increments, but

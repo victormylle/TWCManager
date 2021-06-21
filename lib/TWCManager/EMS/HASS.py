@@ -19,8 +19,10 @@ class HASS:
     consumedW = 0
     fetchFailed = False
     generatedW = 0
+    overproductionW = 0
     hassEntityConsumption = None
     hassEntityGeneration = None
+    hassEntityOverProduction = None
     lastFetch = 0
     master = None
     status = False
@@ -45,8 +47,12 @@ class HASS:
         self.serverPort = self.configHASS.get("serverPort", 8123)
         self.useHttps = self.configHASS.get("useHttps", False)
         self.apiKey = self.configHASS.get("apiKey", None)
-        self.hassEntityConsumption = self.configHASS.get("hassEntityConsumption", None)
-        self.hassEntityGeneration = self.configHASS.get("hassEntityGeneration", None)
+        self.hassEntityConsumption = self.configHASS.get(
+            "hassEntityConsumption", None)
+        self.hassEntityGeneration = self.configHASS.get(
+            "hassEntityGeneration", None)
+        self.hassEntityOverProduction = self.configHASS.get(
+            "hassEntityOverProduction", None)
 
         # Unload if this module is disabled or misconfigured
         if (not self.status) or (not self.serverIP) or (int(self.serverPort) < 1):
@@ -77,6 +83,18 @@ class HASS:
         # Return generation value
         return self.generatedW
 
+    def getOverProduction(self):
+
+        if not self.status:
+            logger.debug("Module Disabled. Skipping getOverProduction")
+            return 0
+
+        # Perform updates if necessary
+        self.update()
+
+        # Return generation value
+        return self.overproductionW
+
     def getAPIValue(self, entity):
         http = "http://" if not (self.useHttps) else "https://"
         url = http + self.serverIP + ":" + self.serverPort + "/api/states/" + entity
@@ -90,8 +108,10 @@ class HASS:
         self.fetchFailed = False
 
         try:
-            logger.debug("Fetching HomeAssistant EMS sensor value " + str(entity))
-            httpResponse = self.requests.get(url, headers=headers, timeout=self.timeout)
+            logger.debug(
+                "Fetching HomeAssistant EMS sensor value " + str(entity))
+            httpResponse = self.requests.get(
+                url, headers=headers, timeout=self.timeout)
         except self.requests.exceptions.ConnectionError as e:
             logger.log(
                 logging.INFO4,
@@ -138,7 +158,8 @@ class HASS:
                     logger.debug("getConsumption returns " + str(apivalue))
                     self.consumedW = float(apivalue)
                 else:
-                    logger.debug("getConsumption fetch failed, using cached values")
+                    logger.debug(
+                        "getConsumption fetch failed, using cached values")
             else:
                 logger.debug("Consumption Entity Not Supplied. Not Querying")
 
@@ -148,9 +169,22 @@ class HASS:
                     logger.debug("getGeneration returns " + str(apivalue))
                     self.generatedW = float(apivalue)
                 else:
-                    logger.debug("getGeneration fetch failed, using cached values")
+                    logger.debug(
+                        "getGeneration fetch failed, using cached values")
             else:
                 logger.debug("Generation Entity Not Supplied. Not Querying")
+
+            if self.hassEntityOverProduction:
+                apivalue = self.getAPIValue(self.hassEntityOverProduction)
+                if self.fetchFailed is not True:
+                    logger.debug("OverProduction returns " + str(apivalue))
+                    self.overproductionW = float(apivalue)
+                else:
+                    logger.debug(
+                        "getOverProduction fetch failed, using cached values")
+            else:
+                logger.debug(
+                    "OverProduction Entity Not Supplied. Not Querying")
 
             # Update last fetch time
             if self.fetchFailed is not True:

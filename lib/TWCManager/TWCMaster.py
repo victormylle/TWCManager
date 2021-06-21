@@ -26,6 +26,7 @@ class TWCMaster:
     backgroundTasksDelayed = []
     config = None
     consumptionValues = {}
+    overproductionValues = {}
     debugOutputToFile = False
     generationValues = {}
     lastkWhMessage = time.time()
@@ -77,7 +78,8 @@ class TWCMaster:
 
     def __init__(self, TWCID, config):
         self.config = config
-        self.debugOutputToFile = config["config"].get("debugOutputToFile", False)
+        self.debugOutputToFile = config["config"].get(
+            "debugOutputToFile", False)
         self.TWCID = TWCID
         self.subtractChargerLoad = config["config"]["subtractChargerLoad"]
         self.advanceHistorySnap()
@@ -86,7 +88,8 @@ class TWCMaster:
         self.registerModule({"name": "master", "ref": self, "type": "Master"})
 
     def addkWhDelivered(self, kWh):
-        self.settings["kWhDelivered"] = self.settings.get("kWhDelivered", 0) + kWh
+        self.settings["kWhDelivered"] = self.settings.get(
+            "kWhDelivered", 0) + kWh
 
     def addSlaveTWC(self, slaveTWC):
         # Adds the Slave TWC to the Round Robin list
@@ -213,7 +216,8 @@ class TWCMaster:
                 self.backgroundTasksDelayed
                 and self.backgroundTasksDelayed[0][0] <= datetime.now()
             ):
-                self.queue_background_task(self.backgroundTasksDelayed.pop(0)[1])
+                self.queue_background_task(
+                    self.backgroundTasksDelayed.pop(0)[1])
 
             # Get the next task
             try:
@@ -320,9 +324,11 @@ class TWCMaster:
             vehicle = slave.getLastVehicle()
             if vehicle != None:
                 amps = self.getScheduledAmpsMax()
-                watts = self.convertAmpsToWatts(amps) * self.getRealPowerFactor(amps)
+                watts = self.convertAmpsToWatts(
+                    amps) * self.getRealPowerFactor(amps)
                 hoursForFullCharge = self.getScheduledAmpsBatterySize() / (watts / 1000)
-                realChargeFactor = (vehicle.chargeLimit - vehicle.batteryLevel) / 100
+                realChargeFactor = (vehicle.chargeLimit -
+                                    vehicle.batteryLevel) / 100
                 # calculating startHour with a max Battery size - so it starts charging and then it has the time
                 startHour = round(
                     self.getScheduledAmpsEndHour()
@@ -378,14 +384,16 @@ class TWCMaster:
         }
         consumption = float(self.getConsumption())
         if consumption:
-            data["consumptionAmps"] = ("%.2f" % self.convertWattsToAmps(consumption),)
+            data["consumptionAmps"] = (
+                "%.2f" % self.convertWattsToAmps(consumption),)
             data["consumptionWatts"] = "%.2f" % consumption
         else:
             data["consumptionAmps"] = "%.2f" % 0
             data["consumptionWatts"] = "%.2f" % 0
         generation = float(self.getGeneration())
         if generation:
-            data["generationAmps"] = ("%.2f" % self.convertWattsToAmps(generation),)
+            data["generationAmps"] = (
+                "%.2f" % self.convertWattsToAmps(generation),)
             data["generationWatts"] = "%.2f" % generation
         else:
             data["generationAmps"] = "%.2f" % 0
@@ -518,6 +526,14 @@ class TWCMaster:
 
         return float(generationVal)
 
+    def getOverProduction(self):
+        overProduction = 0
+        if len(self.overproductionValues) == 1:
+            k = list(self.overproductionValues.keys())[0]
+            overProduction = float(self.overproductionValues[k])
+
+        return overProduction
+
     def getGenerationOffset(self):
         # Returns the number of watts to subtract from the solar generation stats
         # This is consumption + charger load if subtractChargerLoad is enabled
@@ -543,7 +559,15 @@ class TWCMaster:
     def getMaxAmpsToDivideGreenEnergy(self):
         # Calculate our current generation and consumption in watts
         generationW = float(self.getGeneration())
+
+        # W taken from grid
         consumptionW = float(self.getConsumption())
+
+        # W deliverd to grid
+        overProduction = float(self.getOverProduction())
+
+        # if consumption > 0 : chargerLoad - consumption
+        # if overproduction > 0 : chargerLoad + overproduction
 
         # Calculate what we should offer to align with green energy
         #
@@ -551,21 +575,29 @@ class TWCMaster:
         # decrease at least the current gap between generation and
         # consumption.
 
-        currentOffer = max(
-            self.getMaxAmpsToDivideAmongSlaves(),
-            self.num_cars_charging_now() * self.config["config"]["minAmpsPerTWC"],
-        )
-        newOffer = currentOffer + self.convertWattsToAmps(generationW - consumptionW)
+        # currentOffer = self.num_cars_charging_now() * self.config["config"]["minAmpsPerTWC"]
+
+        # newOffer = currentOffer + \
+        #    self.convertWattsToAmps(generationW - consumptionW)
 
         # This is the *de novo* calculation of how much we can offer
         #
         # Fetches and uses consumptionW separately
         generationOffset = self.getGenerationOffset()
-        solarW = float(generationW - generationOffset)
+
+        # generation - consumption + charger load
+        # solarW = float(generationW - generationOffset)
+
+        if overProduction > 0:
+            solarW = overProduction + self.getChargerLoad()
+        else:
+            solarW = max(self.getChargerLoad() - consumptionW, 0)
+
         solarAmps = self.convertWattsToAmps(solarW)
 
         # Offer the smaller of the two, but not less than zero.
-        amps = max(min(newOffer, solarAmps / self.getRealPowerFactor(solarAmps)), 0)
+        amps = max(solarAmps /
+                   self.getRealPowerFactor(solarAmps), 0)
         return round(amps, 2)
 
     def getNormalChargeLimit(self, ID):
@@ -676,8 +708,10 @@ class TWCMaster:
         # Step 2 - Send settings to other modules
         carapi = self.getModuleByName("TeslaAPI")
         carapi.setCarApiBearerToken(self.settings.get("carApiBearerToken", ""))
-        carapi.setCarApiRefreshToken(self.settings.get("carApiRefreshToken", ""))
-        carapi.setCarApiTokenExpireTime(self.settings.get("carApiTokenExpireTime", ""))
+        carapi.setCarApiRefreshToken(
+            self.settings.get("carApiRefreshToken", ""))
+        carapi.setCarApiTokenExpireTime(
+            self.settings.get("carApiTokenExpireTime", ""))
 
         # If particular details are missing from the Settings dict, create them
         if not self.settings.get("VehicleGroups", None):
@@ -1018,10 +1052,12 @@ class TWCMaster:
                 json.dump(self.settings, outconfig)
             self.lastSaveFailed = 0
         except PermissionError as e:
-            logger.info("Permission Denied trying to save to settings.json. Please check the permissions of the file and try again.")
+            logger.info(
+                "Permission Denied trying to save to settings.json. Please check the permissions of the file and try again.")
             self.lastSaveFailed = 1
         except TypeError as e:
-            logger.info("Exception raised while attempting to save settings file:")
+            logger.info(
+                "Exception raised while attempting to save settings file:")
             logger.info(str(e))
             self.lastSaveFailed = 1
 
@@ -1139,7 +1175,7 @@ class TWCMaster:
                 + bytearray(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00")
             )
 
-    def sendStopCommand(self, subTWC = None):
+    def sendStopCommand(self, subTWC=None):
         # This function will loop through each of the Slave TWCs, and send them the stop command.
         # If the subTWC parameter is supplied, we only stop the specified TWC
         for slaveTWC in self.getSlaveTWCs():
@@ -1162,7 +1198,8 @@ class TWCMaster:
                 "setChargeNowAmps failed because specified amps are above wiringMaxAmpsAllTWCs"
             )
         elif amps < 0:
-            logger.info("setChargeNowAmps failed as specified amps is less than 0")
+            logger.info(
+                "setChargeNowAmps failed as specified amps is less than 0")
         else:
             self.settings["chargeNowAmps"] = amps
 
@@ -1177,6 +1214,9 @@ class TWCMaster:
 
     def setGeneration(self, source, value):
         self.generationValues[source] = value
+
+    def setOverProduction(self, source, value):
+        self.overproductionValues[source] = value
 
     def setHomeLat(self, lat):
         self.settings["homeLat"] = lat
@@ -1324,28 +1364,29 @@ class TWCMaster:
 
     def time_now(self):
         return datetime.now().strftime(
-            "%H:%M:%S" + (".%f" if self.config["config"]["displayMilliseconds"] else "")
+            "%H:%M:%S" +
+            (".%f" if self.config["config"]["displayMilliseconds"] else "")
         )
 
     def translateModuleNameToConfig(self, modulename):
         # This function takes a module name (eg. EMS.Fronius) and returns a config section (Sources.Fronius)
         # It makes it easier for us to determine where a module's config should be
-        configloc = [ "", "" ]
+        configloc = ["", ""]
         if modulename[0] == "Control":
-            configloc[0] = "control";
-            configloc[1] = str(modulename[1]).replace('Control','')
+            configloc[0] = "control"
+            configloc[1] = str(modulename[1]).replace('Control', '')
         elif modulename[0] == "EMS":
-            configloc[0] = "sources";
+            configloc[0] = "sources"
             configloc[1] = modulename[1]
         elif modulename[0] == "Interface":
-            configloc[0] = "interface";
+            configloc[0] = "interface"
             configloc[1] = modulename[1]
         elif modulename[0] == "Logging":
-            configloc[0] = "logging";
-            configloc[1] = str(modulename[1]).replace('Logging','')
+            configloc[0] = "logging"
+            configloc[1] = str(modulename[1]).replace('Logging', '')
         elif modulename[0] == "Status":
-            configloc[0] = "status";
-            configloc[1] = str(modulename[1]).replace('Status','')
+            configloc[0] = "status"
+            configloc[1] = str(modulename[1]).replace('Status', '')
         else:
             return modulename
 
@@ -1388,8 +1429,10 @@ class TWCMaster:
             )
 
     def getRealPowerFactor(self, amps):
-        realPowerFactorMinAmps = self.config["config"].get("realPowerFactorMinAmps", 1)
-        realPowerFactorMaxAmps = self.config["config"].get("realPowerFactorMaxAmps", 1)
+        realPowerFactorMinAmps = self.config["config"].get(
+            "realPowerFactorMinAmps", 1)
+        realPowerFactorMaxAmps = self.config["config"].get(
+            "realPowerFactorMaxAmps", 1)
         minAmps = self.config["config"]["minAmpsPerTWC"]
         maxAmps = self.config["config"]["wiringMaxAmpsAllTWCs"]
         if minAmps == maxAmps:
