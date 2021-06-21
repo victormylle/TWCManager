@@ -331,7 +331,9 @@ def check_green_energy():
         master.setGeneration(module["name"], module["ref"].getGeneration())
 
         if (module["name"] == "HASS"):
-            e
+            master.setOverProduction(
+                module["name"], module["ref"].getOverProduction())
+
     # Set max amps iff charge_amps isn't specified on the policy.
     if master.getModuleByName("Policy").policyIsGreen():
         master.setMaxAmpsToDivideAmongSlaves(
