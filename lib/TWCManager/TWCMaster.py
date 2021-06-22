@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__.rsplit(".")[-1])
 
 class TWCMaster:
 
+    usingGridValues = False
     allowed_flex = 0
     backgroundTasksQueue = queue.Queue()
     backgroundTasksCmds = {}
