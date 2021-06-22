@@ -656,6 +656,7 @@ class TWCSlave:
         # Determine how many cars are charging and how many amps they're using
         numCarsCharging = self.master.num_cars_charging_now()
         desiredAmpsOffered = self.master.getMaxAmpsToDivideAmongSlaves()
+        logger.info("Ampsss: " + str(desiredAmpsOffered))
         flex = self.master.getAllowedFlex()
 
         if numCarsCharging > 0:
@@ -674,7 +675,7 @@ class TWCSlave:
             if desiredAmpsOffered > fairShareAmps:
                 desiredAmpsOffered = fairShareAmps
 
-            logger.info(
+            logger.debug(
                 "desiredAmpsOffered TWC: "
                 + self.master.hex_str(self.TWCID)
                 + " reduced from "
