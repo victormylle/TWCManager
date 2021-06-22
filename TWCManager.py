@@ -424,13 +424,20 @@ def update_statuses():
         else:
             if ((ovwatts or conwatts) and (not conoffset and not othwatts)):
 
-                logger.info(
-                    "Green energy Generates %s, Consumption %s (Charger Load %s)",
-                    f("{genwatts:.0f}W"),
-                    f("{conwatts:.0f}W"),
-                    f("{chgwatts:.0f}W"),
-                    extra=logExtra,
-                )
+                if (ovwatts > 0):
+                    logger.info(
+                        "Green energy deliverers %s to grid (Charger Load %s)",
+                        f("{ovwatts:.0f}W"),
+                        f("{chgwatts:.0f}W"),
+                        extra=logExtra,
+                    )
+                else:
+                    logger.info(
+                        "Green energy takes %s from grid (Charger Load %s)",
+                        f("{conwatts:.0f}W"),
+                        f("{chgwatts:.0f}W"),
+                        extra=logExtra,
+                    )
 
             elif ((ovwatts or conwatts) and not conoffset):
                 if (ovwatts > 0):
