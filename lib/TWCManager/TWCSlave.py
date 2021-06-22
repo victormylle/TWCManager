@@ -835,7 +835,7 @@ class TWCSlave:
                 # spikeAmpsToCancel6ALimit of power draw. In fact, the car is
                 # slow enough to respond that even with 10s at 21A the most I've
                 # seen it actually draw starting at 6A is 13A.
-                logger.debug(
+                logger.info(
                     "TWCID="
                     + self.master.hex_str(self.TWCID)
                     + " desiredAmpsOffered="
