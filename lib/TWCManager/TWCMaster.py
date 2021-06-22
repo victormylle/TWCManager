@@ -593,14 +593,14 @@ class TWCMaster:
         # solarW = float(generationW - generationOffset)
 
         if overProduction > 0:
-            solarW = overProduction + self.getChargerLoad()
+            solarW = float(overProduction + self.getChargerLoad())
         else:
-            solarW = max(self.getChargerLoad() - consumptionW, 0)
+            solarW = float(max(self.getChargerLoad() - consumptionW, 0))
 
         solarAmps = self.convertWattsToAmps(solarW)
 
         # Offer the smaller of the two, but not less than zero.
-        amps = max(min(newOffer, solarAmps /
+        amps = max(min(solarAmps /
                        self.getRealPowerFactor(solarAmps)), 0)
         return round(amps, 2)
 
@@ -1250,7 +1250,7 @@ class TWCMaster:
         if amps > self.config["config"]["wiringMaxAmpsAllTWCs"]:
             # Never tell the slaves to draw more amps than the physical charger
             # wiring can handle.
-            logger.info(
+            logger.(
                 "ERROR: specified maxAmpsToDivideAmongSlaves "
                 + str(amps)
                 + " > wiringMaxAmpsAllTWCs "
