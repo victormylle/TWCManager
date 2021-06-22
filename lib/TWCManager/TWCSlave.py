@@ -674,7 +674,7 @@ class TWCSlave:
             if desiredAmpsOffered > fairShareAmps:
                 desiredAmpsOffered = fairShareAmps
 
-            logger.debug(
+            logger.info(
                 "desiredAmpsOffered TWC: "
                 + self.master.hex_str(self.TWCID)
                 + " reduced from "
