@@ -801,8 +801,6 @@ class TWCSlave:
             # stick with whole amps.
             desiredAmpsOffered = int(desiredAmpsOffered)
 
-            logger.info("Ampsss: " + str(desiredAmpsOffered))
-
             if self.lastAmpsOffered == 0 and now - self.timeLastAmpsOfferedChanged < 60:
                 # Keep charger off for at least 60 seconds before turning back
                 # on. See reasoning above where I don't turn the charger off
@@ -947,6 +945,7 @@ class TWCSlave:
                     if now - self.timeLastAmpsOfferedChanged < 5:
                         desiredAmpsOffered = self.lastAmpsOffered
 
+        logger.info("Ampsss: " + str(desiredAmpsOffered))
         # set_last_amps_offered does some final checks to see if the new
         # desiredAmpsOffered is safe. It should be called after we've picked a
         # final value for desiredAmpsOffered.
