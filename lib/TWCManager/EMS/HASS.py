@@ -186,7 +186,7 @@ class HASS:
             if self.hassEntityOverProduction:
 
                 if self.debug:
-                    apivalue = 6000
+                    apivalue = 3000
                 else:
                     apivalue = self.getAPIValue(self.hassEntityOverProduction)
 

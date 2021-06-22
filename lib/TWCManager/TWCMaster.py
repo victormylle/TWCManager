@@ -576,15 +576,18 @@ class TWCMaster:
         # decrease at least the current gap between generation and
         # consumption.
 
-        # currentOffer = self.num_cars_charging_now() * self.config["config"]["minAmpsPerTWC"]
-
-        # newOffer = currentOffer + \
-        #    self.convertWattsToAmps(generationW - consumptionW)
+        currentOffer = max(
+            self.getMaxAmpsToDivideAmongSlaves(),
+            self.num_cars_charging_now() *
+            self.config["config"]["minAmpsPerTWC"],
+        )
+        newOffer = currentOffer + \
+            self.convertWattsToAmps(overProduction - consumptionW)
 
         # This is the *de novo* calculation of how much we can offer
         #
         # Fetches and uses consumptionW separately
-        generationOffset = self.getGenerationOffset()
+        # generationOffset = self.getGenerationOffset()
 
         # generation - consumption + charger load
         # solarW = float(generationW - generationOffset)
@@ -597,8 +600,8 @@ class TWCMaster:
         solarAmps = self.convertWattsToAmps(solarW)
 
         # Offer the smaller of the two, but not less than zero.
-        amps = max(solarAmps /
-                   self.getRealPowerFactor(solarAmps), 0)
+        amps = max(min(newOffer, solarAmps /
+                       self.getRealPowerFactor(solarAmps), 0))
         return round(amps, 2)
 
     def getNormalChargeLimit(self, ID):
