@@ -30,6 +30,7 @@ class HASS:
     serverPort = 8123
     useHttps = False
     timeout = 2
+    debug = False
 
     def __init__(self, master):
         self.master = master
@@ -53,6 +54,8 @@ class HASS:
             "hassEntityGeneration", None)
         self.hassEntityOverProduction = self.configHASS.get(
             "hassEntityOverProduction", None)
+        self.debug = self.configHASS.get(
+            "debug", False)
 
         # Unload if this module is disabled or misconfigured
         if (not self.status) or (not self.serverIP) or (int(self.serverPort) < 1):
@@ -96,6 +99,13 @@ class HASS:
         return self.overproductionW
 
     def getAPIValue(self, entity):
+
+        if self.debug:
+            if entity == "hassEntityOverProduction":
+                return 6000
+            elif entity == "hassEntityConsumption":
+                return 0
+
         http = "http://" if not (self.useHttps) else "https://"
         url = http + self.serverIP + ":" + self.serverPort + "/api/states/" + entity
         headers = {

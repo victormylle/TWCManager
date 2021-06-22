@@ -349,6 +349,7 @@ def update_statuses():
     if master.getModuleByName("Policy").policyIsGreen():
         genwatts = master.getGeneration()
         conwatts = master.getConsumption()
+        ovwatts = master.getOverProduction
         conoffset = master.getConsumptionOffset()
         chgwatts = master.getChargerLoad()
         othwatts = 0
