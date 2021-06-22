@@ -345,7 +345,7 @@ def check_green_energy():
 
 def update_statuses():
 
-    usingGridValues = False
+    usingGridValues = master.usingGridValues
     # Print a status update if we are on track green energy showing the
     # generation and consumption figures
     maxamps = master.getMaxAmpsToDivideAmongSlaves()
