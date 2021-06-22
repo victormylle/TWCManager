@@ -1241,7 +1241,7 @@ class TWCMaster:
         self.masterTWCID = twcid
 
     def setMaxAmpsToDivideAmongSlaves(self, amps):
-
+        logger.info("AMPSSSSSS: " + amps)
         # Use backgroundTasksLock to prevent changing maxAmpsToDivideAmongSlaves
         # if the main thread is in the middle of examining and later using
         # that value.
