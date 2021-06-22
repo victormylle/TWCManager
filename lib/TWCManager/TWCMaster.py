@@ -600,8 +600,8 @@ class TWCMaster:
         solarAmps = self.convertWattsToAmps(solarW)
 
         # Offer the smaller of the two, but not less than zero.
-        amps = max(min(solarAmps /
-                       self.getRealPowerFactor(solarAmps)), 0)
+        amps = max(solarAmps /
+                   self.getRealPowerFactor(solarAmps), 0)
         return round(amps, 2)
 
     def getNormalChargeLimit(self, ID):
