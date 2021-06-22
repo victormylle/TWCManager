@@ -656,7 +656,7 @@ class TWCSlave:
         # Determine how many cars are charging and how many amps they're using
         numCarsCharging = self.master.num_cars_charging_now()
         desiredAmpsOffered = self.master.getMaxAmpsToDivideAmongSlaves()
-        logger.info("Ampsss: " + str(desiredAmpsOffered))
+
         flex = self.master.getAllowedFlex()
 
         if numCarsCharging > 0:
@@ -800,6 +800,8 @@ class TWCSlave:
             # use to ~5.14-5.23A and refuses to go higher. So it seems best to
             # stick with whole amps.
             desiredAmpsOffered = int(desiredAmpsOffered)
+
+            logger.info("Ampsss: " + str(desiredAmpsOffered))
 
             if self.lastAmpsOffered == 0 and now - self.timeLastAmpsOfferedChanged < 60:
                 # Keep charger off for at least 60 seconds before turning back
