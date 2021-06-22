@@ -100,12 +100,6 @@ class HASS:
 
     def getAPIValue(self, entity):
 
-        if self.debug:
-            if entity == "hassEntityOverProduction":
-                return 6000
-            elif entity == "hassEntityConsumption":
-                return 0
-
         http = "http://" if not (self.useHttps) else "https://"
         url = http + self.serverIP + ":" + self.serverPort + "/api/states/" + entity
         headers = {
@@ -163,7 +157,12 @@ class HASS:
             # Cache has expired. Fetch values from HomeAssistant sensor.
 
             if self.hassEntityConsumption:
-                apivalue = self.getAPIValue(self.hassEntityConsumption)
+
+                if self.debug:
+                    apivalue = 0
+                else:
+                    apivalue = self.getAPIValue(self.hassEntityConsumption)
+
                 if self.fetchFailed is not True:
                     logger.debug("getConsumption returns " + str(apivalue))
                     self.consumedW = float(apivalue)
@@ -185,7 +184,12 @@ class HASS:
                 logger.debug("Generation Entity Not Supplied. Not Querying")
 
             if self.hassEntityOverProduction:
-                apivalue = self.getAPIValue(self.hassEntityOverProduction)
+
+                if self.debug:
+                    apivalue = 6000
+                else:
+                    apivalue = self.getAPIValue(self.hassEntityOverProduction)
+
                 if self.fetchFailed is not True:
                     logger.debug("OverProduction returns " + str(apivalue))
                     self.overproductionW = float(apivalue)
