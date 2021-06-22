@@ -601,7 +601,7 @@ class TWCMaster:
 
         # Offer the smaller of the two, but not less than zero.
         amps = max(min(newOffer, solarAmps /
-                       self.getRealPowerFactor(solarAmps), 0))
+                       self.getRealPowerFactor(solarAmps)), 0)
         return round(amps, 2)
 
     def getNormalChargeLimit(self, ID):
