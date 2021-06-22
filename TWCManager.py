@@ -330,6 +330,8 @@ def check_green_energy():
         master.setConsumption(module["name"], module["ref"].getConsumption())
         master.setGeneration(module["name"], module["ref"].getGeneration())
 
+        logger.info(module["name"])
+
         if (module["name"] == "HASS"):
             if module["ref"].hassEntityOverProduction:
                 master.usingGridValues = True
