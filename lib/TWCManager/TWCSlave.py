@@ -1002,7 +1002,7 @@ class TWCSlave:
     def set_last_amps_offered(self, desiredAmpsOffered):
         # self.lastAmpsOffered should only be changed using this sub.
 
-        logger.debug(
+        logger.info(
             "set_last_amps_offered(TWCID="
             + self.master.hex_str(self.TWCID)
             + ", desiredAmpsOffered="
