@@ -25,7 +25,7 @@ class Policy:
             "condition": ["gt", "gt", "gt"],
             "value": [0, 0, "now"],
             "charge_amps": "settings.chargeNowAmps",
-            "charge_limit": "config.chargeNowLimit",
+            "charge_limit": "settings.chargePolicyLimits.chargenow",
         },
         # Check if we are currently within the Scheduled Amps charging schedule.
         # If so, charge at the specified number of amps.
@@ -35,7 +35,7 @@ class Policy:
             "condition": ["eq"],
             "value": [1],
             "charge_amps": "settings.scheduledAmpsMax",
-            "charge_limit": "config.scheduledLimit",
+            "charge_limit": "settings.chargePolicyLimits.scheduled",
         },
         # If we are within Track Green Energy schedule, charging will be
         # performed based on the amount of solar energy being produced.
@@ -50,7 +50,7 @@ class Policy:
             "value": [6, 20, "tm_hour"],
             "background_task": "checkGreenEnergy",
             "allowed_flex": "config.greenEnergyFlexAmps",
-            "charge_limit": "config.greenEnergyLimit",
+            "charge_limit": "settings.chargePolicyLimits.trackgreenenergy",
         },
         # If all else fails (ie no other policy match), we will charge at
         # nonScheduledAmpsMax, unless overridden with nonScheduledAction,
