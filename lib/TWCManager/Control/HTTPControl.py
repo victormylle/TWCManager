@@ -586,8 +586,8 @@ def CreateHTTPHandlerClass(master):
                     if "chargePolicyLimits" not in master.settings:
                         master.settings["chargePolicyLimits"] = {}
                     master.settings["chargePolicyLimits"][policy] = limit
-                    master.getModuleByName("Policy").updateChargingLimit()
                 master.queue_background_task({"cmd": "saveSettings"})
+                master.getModuleByName("Policy").updateChargingLimit()
                 self.send_response(204)
                 self.end_headers()
             else:
