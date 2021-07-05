@@ -583,6 +583,8 @@ def CreateHTTPHandlerClass(master):
                 if (policy and limit and
                     not self.checkForUnsafeCharactters(policy) and
                         not self.checkForUnsafeCharactters(limit)):
+                    if "chargePolicyLimits" not in master.settings:
+                        master.settings["chargePolicyLimits"] = {}
                     master.settings["chargePolicyLimits"][policy] = limit
                 master.queue_background_task({"cmd": "saveSettings"})
                 self.send_response(204)
