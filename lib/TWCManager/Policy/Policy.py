@@ -222,7 +222,13 @@ class Policy:
             self.master.queue_background_task({"cmd": bgt})
 
         # If a charge limit is defined for this policy, apply it
-        limit = limit = self.policyValue(policy.get("charge_limit", -1))
+        self.updateChargingLimit(policy)
+
+    def updateChargingLimit(self, policy=None):
+        if not policy:
+            policy = self.getPolicyByName(self.active_policy)
+
+        limit = self.policyValue(policy.get("charge_limit", -1))
         if self.limitOverride:
             currentCharge = (
                 self.master.getModuleByName(
