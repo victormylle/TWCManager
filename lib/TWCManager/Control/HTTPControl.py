@@ -1123,9 +1123,6 @@ def CreateHTTPHandlerClass(master):
             self.wfile.write("".encode("utf-8"))
             return
 
-        def process_save_limits(self):
-            master.settings.
-
         def process_save_settings(self, page="settings"):
 
             # This function will write the settings submitted from the settings
