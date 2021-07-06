@@ -90,7 +90,6 @@ modules_available = [
     "EMS.Efergy",
     "EMS.Enphase",
     "EMS.Fronius",
-    "EMS.Growatt",
     "EMS.HASS",
     "EMS.Kostal",
     "EMS.OpenHab",
@@ -330,6 +329,12 @@ def check_green_energy():
     for module in master.getModulesByType("EMS"):
         master.setConsumption(module["name"], module["ref"].getConsumption())
         master.setGeneration(module["name"], module["ref"].getGeneration())
+
+        if (module["name"] == "HASS"):
+            if module["ref"].hassEntityOverProduction:
+                master.usingGridValues = True
+                master.setOverProduction(
+                    module["name"], module["ref"].getOverProduction())
 
     # Set max amps iff charge_amps isn't specified on the policy.
     if master.getModuleByName("Policy").policyIsGreen():
