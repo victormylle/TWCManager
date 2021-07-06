@@ -44,7 +44,8 @@ class HTTPControl:
 
         # Unload if this module is disabled or misconfigured
         if (not self.status) or (int(self.httpPort) < 1):
-            self.master.releaseModule("lib.TWCManager.Control", self.__class__.__name__)
+            self.master.releaseModule(
+                "lib.TWCManager.Control", self.__class__.__name__)
             return None
 
         HTTPHandler = CreateHTTPHandlerClass(master)
@@ -58,7 +59,9 @@ class HTTPControl:
             logger.info("Serving at port: " + str(self.httpPort))
             threading.Thread(target=httpd.serve_forever, daemon=True).start()
         else:
-            self.master.releaseModule("lib.TWCManager.Control", self.__class__.__name__)
+            self.master.releaseModule(
+                "lib.TWCManager.Control", self.__class__.__name__)
+
 
 def CreateHTTPHandlerClass(master):
     class HTTPControlHandler(BaseHTTPRequestHandler):
@@ -80,14 +83,16 @@ def CreateHTTPHandlerClass(master):
             if not len(self.ampsList):
                 self.ampsList.append([0, "Disabled"])
                 for amp in range(
-                    5, (master.config["config"].get("wiringMaxAmpsPerTWC", 5)) + 1
+                    5, (master.config["config"].get(
+                        "wiringMaxAmpsPerTWC", 5)) + 1
                 ):
                     self.ampsList.append([amp, str(amp) + "A"])
 
             # Populate list of hours
             if not len(self.hoursDurationList):
                 for hour in range(1, 25):
-                    self.hoursDurationList.append([(hour * 3600), str(hour) + "h"])
+                    self.hoursDurationList.append(
+                        [(hour * 3600), str(hour) + "h"])
 
             if not len(self.timeList):
                 for hour in range(0, 24):
@@ -126,11 +131,15 @@ def CreateHTTPHandlerClass(master):
             # render HTML, we can keep using those even inside jinja2
             self.templateEnv.globals.update(addButton=self.addButton)
             self.templateEnv.globals.update(ampsList=self.ampsList)
-            self.templateEnv.globals.update(chargeScheduleDay=self.chargeScheduleDay)
+            self.templateEnv.globals.update(
+                chargeScheduleDay=self.chargeScheduleDay)
             self.templateEnv.globals.update(checkBox=self.checkBox)
-            self.templateEnv.globals.update(doChargeSchedule=self.do_chargeSchedule)
-            self.templateEnv.globals.update(getMFADevices=master.getModuleByName("TeslaAPI").getMFADevices)
-            self.templateEnv.globals.update(hoursDurationList=self.hoursDurationList)
+            self.templateEnv.globals.update(
+                doChargeSchedule=self.do_chargeSchedule)
+            self.templateEnv.globals.update(
+                getMFADevices=master.getModuleByName("TeslaAPI").getMFADevices)
+            self.templateEnv.globals.update(
+                hoursDurationList=self.hoursDurationList)
             self.templateEnv.globals.update(navbarItem=self.navbar_item)
             self.templateEnv.globals.update(optionList=self.optionList)
             self.templateEnv.globals.update(timeList=self.timeList)
@@ -185,7 +194,8 @@ def CreateHTTPHandlerClass(master):
                         page += (
                             "<td bgcolor='#CFFAFF'>SC @ "
                             + str(
-                                settings.get("Settings", {}).get("scheduledAmpsMax", 0)
+                                settings.get("Settings", {}).get(
+                                    "scheduledAmpsMax", 0)
                             )
                             + "A</td>"
                         )
@@ -237,14 +247,16 @@ def CreateHTTPHandlerClass(master):
                 self.send_header("Content-type", "text/plain")
                 self.end_headers()
 
-                self.wfile.write(str(master.lastTWCResponseMsg).encode("utf-8"))
+                self.wfile.write(
+                    str(master.lastTWCResponseMsg).encode("utf-8"))
 
             elif self.url.path == "/api/getPolicy":
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
 
-                json_data = json.dumps(master.getModuleByName("Policy").charge_policy)
+                json_data = json.dumps(
+                    master.getModuleByName("Policy").charge_policy)
                 self.wfile.write(json_data.encode("utf-8"))
 
             elif self.url.path == "/api/getSlaveTWCs":
@@ -328,7 +340,8 @@ def CreateHTTPHandlerClass(master):
                 )
 
                 source = (
-                    master.settings["history"] if "history" in master.settings else []
+                    master.settings["history"] if "history" in master.settings else [
+                    ]
                 )
                 data = {
                     k: v for k, v in source if datetime.fromisoformat(k) >= startTime
@@ -390,7 +403,7 @@ def CreateHTTPHandlerClass(master):
                 unit = str(data.get("offsetUnit", ""))
 
                 if (name and value and (unit == "A" or unit == "W")
-                    and len(name) < 32 and not self.checkForUnsafeCharactters(name)):
+                        and len(name) < 32 and not self.checkForUnsafeCharactters(name)):
                     if not master.settings.get("consumptionOffset", None):
                         master.settings["consumptionOffset"] = {}
                     master.settings["consumptionOffset"][name] = {}
@@ -514,7 +527,7 @@ def CreateHTTPHandlerClass(master):
 
                 if (setting and value and
                     not self.checkForUnsafeCharactters(setting) and
-                    not self.checkForUnsafeCharactters(value)):
+                        not self.checkForUnsafeCharactters(value)):
                     master.settings[setting] = value
                 self.send_response(204)
                 self.end_headers()
@@ -568,7 +581,21 @@ def CreateHTTPHandlerClass(master):
                 self.send_response(202)
                 self.end_headers()
                 self.wfile.write("".encode("utf-8"))
+            elif self.url.path == "/api/setChargingLimits":
+                data = json.loads(self.post_data.decode("UTF-8"))
+                policy = str(data.get("policy", None))
+                limit = str(data.get("limit", None))
 
+                if (policy and limit and
+                    not self.checkForUnsafeCharactters(policy) and
+                        not self.checkForUnsafeCharactters(limit)):
+                    if "chargePolicyLimits" not in master.settings:
+                        master.settings["chargePolicyLimits"] = {}
+                    master.settings["chargePolicyLimits"][policy] = limit
+                master.queue_background_task({"cmd": "saveSettings"})
+                master.getModuleByName("Policy").updateChargingLimit()
+                self.send_response(204)
+                self.end_headers()
             else:
                 # All other routes missed, return 404
                 self.send_response(404)
@@ -598,7 +625,8 @@ def CreateHTTPHandlerClass(master):
 
                     j += 1
                 else:
-                    cat = "Custom" if replaced else insertion_points.get(j, "Unknown")
+                    cat = "Custom" if replaced else insertion_points.get(
+                        j, "Unknown")
                 page += (
                     "<tr><td>&nbsp;</td><td>"
                     + policy["name"]
@@ -667,15 +695,15 @@ def CreateHTTPHandlerClass(master):
                 return
 
             webroutes = [
-              { "route": "/debug",    "tmpl": "debug.html.j2" },
-              { "route": "/schedule", "tmpl": "schedule.html.j2" },
-              { "route": "/settings", "tmpl": "settings.html.j2" },
-              { "rstart": "/vehicleDetail", "tmpl": "vehicleDetail.html.j2" },
-              { "route": "/vehicles", "tmpl": "vehicles.html.j2" }
+                {"route": "/debug",    "tmpl": "debug.html.j2"},
+                {"route": "/schedule", "tmpl": "schedule.html.j2"},
+                {"route": "/settings", "tmpl": "settings.html.j2"},
+                {"rstart": "/vehicleDetail", "tmpl": "vehicleDetail.html.j2"},
+                {"route": "/vehicles", "tmpl": "vehicles.html.j2"}
             ]
 
             if (self.url.path == "/teslaAccount/login" or
-                self.url.path == "/teslaAccount/mfaCode"):
+                    self.url.path == "/teslaAccount/mfaCode"):
                 # For security, these details should be submitted via a POST request
                 # Send a 405 Method Not Allowed in response.
                 self.send_response(405)
@@ -862,15 +890,19 @@ def CreateHTTPHandlerClass(master):
 
                 if op == "add":
                     try:
-                        master.settings["VehicleGroups"][group]["Members"].append(vin)
+                        master.settings["VehicleGroups"][group]["Members"].append(
+                            vin)
                     except ValueError:
-                        logger.error("Error adding vehicle %s to group %s" % (vin, group))
+                        logger.error(
+                            "Error adding vehicle %s to group %s" % (vin, group))
 
                 elif op == "remove":
                     try:
-                        master.settings["VehicleGroups"][group]["Members"].remove(vin)
+                        master.settings["VehicleGroups"][group]["Members"].remove(
+                            vin)
                     except ValueError:
-                        logger.error("Error removing vehicle %s from group %s" % (vin, group))
+                        logger.error(
+                            "Error removing vehicle %s from group %s" % (vin, group))
 
                 master.queue_background_task({"cmd": "saveSettings"})
 
@@ -886,7 +918,6 @@ def CreateHTTPHandlerClass(master):
                 self.end_headers()
                 self.wfile.write("".encode("utf-8"))
                 return
-
 
             # All other routes missed, return 404
             self.send_response(404)
@@ -931,7 +962,8 @@ def CreateHTTPHandlerClass(master):
                 "<td>"
                 + self.optionList(
                     self.timeList,
-                    {"name": "start" + suffix, "value": today.get("start", "00:00")},
+                    {"name": "start" + suffix,
+                        "value": today.get("start", "00:00")},
                 )
                 + "</td>"
             )
@@ -940,12 +972,14 @@ def CreateHTTPHandlerClass(master):
                 "<td>"
                 + self.optionList(
                     self.timeList,
-                    {"name": "end" + suffix, "value": today.get("end", "00:00")},
+                    {"name": "end" + suffix,
+                        "value": today.get("end", "00:00")},
                 )
                 + "</td>"
             )
             page += (
-                "<td>" + self.checkBox("flex" + suffix, today.get("flex", 0)) + "</td>"
+                "<td>" + self.checkBox("flex" + suffix,
+                                       today.get("flex", 0)) + "</td>"
             )
             page += "<td>Flex Charge</td>"
             page += "</tr>"
@@ -1075,12 +1109,18 @@ def CreateHTTPHandlerClass(master):
             # Scheduled Days bitmap backward compatibility
             master.settings["scheduledAmpsDaysBitmap"] = (
                 (1 if master.settings["Schedule"]["Monday"]["enabled"] else 0)
-                + (2 if master.settings["Schedule"]["Tuesday"]["enabled"] else 0)
-                + (4 if master.settings["Schedule"]["Wednesday"]["enabled"] else 0)
-                + (8 if master.settings["Schedule"]["Thursday"]["enabled"] else 0)
-                + (16 if master.settings["Schedule"]["Friday"]["enabled"] else 0)
-                + (32 if master.settings["Schedule"]["Saturday"]["enabled"] else 0)
-                + (64 if master.settings["Schedule"]["Sunday"]["enabled"] else 0)
+                + (2 if master.settings["Schedule"]
+                   ["Tuesday"]["enabled"] else 0)
+                + (4 if master.settings["Schedule"]
+                   ["Wednesday"]["enabled"] else 0)
+                + (8 if master.settings["Schedule"]
+                   ["Thursday"]["enabled"] else 0)
+                + (16 if master.settings["Schedule"]
+                   ["Friday"]["enabled"] else 0)
+                + (32 if master.settings["Schedule"]
+                   ["Saturday"]["enabled"] else 0)
+                + (64 if master.settings["Schedule"]
+                   ["Sunday"]["enabled"] else 0)
             )
 
             # Save Settings
@@ -1092,7 +1132,7 @@ def CreateHTTPHandlerClass(master):
             self.wfile.write("".encode("utf-8"))
             return
 
-        def process_save_settings(self, page = "settings"):
+        def process_save_settings(self, page="settings"):
 
             # This function will write the settings submitted from the settings
             # page to the settings dict, before triggering a write of the settings
@@ -1125,12 +1165,12 @@ def CreateHTTPHandlerClass(master):
             # request data - This is because Check Boxes don't have a value
             # if they aren't set
             if page == "debug":
-                  checkboxes = ["enableDebugCommands",
-                                "spikeAmpsProactively",
-                                "spikeAmpsReactively" ]
-                  for checkbox in checkboxes:
-                      if checkbox not in self.fields:
-                          master.settings[checkbox] = 0
+                checkboxes = ["enableDebugCommands",
+                              "spikeAmpsProactively",
+                              "spikeAmpsReactively"]
+                for checkbox in checkboxes:
+                    if checkbox not in self.fields:
+                        master.settings[checkbox] = 0
 
             # Redirect to the index page
             self.send_response(302)
