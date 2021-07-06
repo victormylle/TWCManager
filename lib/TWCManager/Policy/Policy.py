@@ -228,7 +228,7 @@ class Policy:
         if not policy:
             policy = self.getPolicyByName(self.active_policy)
 
-        limit = int(self.policyValue(policy.get("charge_limit", -1)))
+        limit = int(float(self.policyValue(policy.get("charge_limit", -1))))
         if self.limitOverride:
             currentCharge = (
                 self.master.getModuleByName(
