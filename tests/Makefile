@@ -27,11 +27,11 @@ mysql_setup:
 	@echo "${bold}${red}(P5/${pre})${reset} ${yellow}Environment Preparation"
 	@sudo /home/docker/.pyenv/shims/python3 env_preparation.py
 	@echo "${bold}${red}(P6/${pre})${reset} ${yellow}Set up SQLite Database"
-	@python3 scripts/sqlite_setup.py
+	@sudo -u twcmanager /home/docker/.pyenv/shims/python3 scripts/sqlite_setup.py
 
 run_twcmanager:
 	@echo "${bold}${red}(M1/2)${reset} ${yellow}Running TWCManager"
-	@cd .. && python3 -m TWCManager &
+	@cd .. && sudo -u twcmanager /home/docker/.pyenv/shims/python3 -m TWCManager &
 
 upload:
 	@echo Uploading debug files

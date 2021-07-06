@@ -13,8 +13,9 @@
           {{ navbarItem("/graphs", "Graphs")|safe }}
           {{ navbarItem("/debug", "Debug")|safe }}
           {{ navbarItem("/settings", "Settings")|safe }}
-          {{ navbarItem("https://github.com/ngardiner/TWCManager", "GitHub")|safe }}
+          {{ navbarItem("https://github.com/ngardiner/TWCManager", "GitHub", "_blank")|safe }}
         </ul>
+        <span class='navbar-text' id="currentServerTime"></span>
         <span class='navbar-text'>v{{ master.version }}</span>
    </div>
 </nav>

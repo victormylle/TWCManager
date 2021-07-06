@@ -55,6 +55,7 @@ class TWCMaster:
         "scheduledAmpsEndHour": -1,
         "scheduledAmpsMax": 0,
         "scheduledAmpsStartHour": -1,
+        "sendServerTime": 0
     }
     slaveHeartbeatData = bytearray(
         [0x01, 0x0F, 0xA0, 0x0F, 0xA0, 0x00, 0x00, 0x00, 0x00]
@@ -302,6 +303,13 @@ class TWCMaster:
         else:
             return 0
 
+    def getSendServerTime(self):
+        sendservertime = int(self.settings.get("sendServerTime", 0))
+        if sendservertime > 0:
+            return 1
+        else:
+            return 0
+
     def getScheduledAmpsMax(self):
         schedamps = int(self.settings.get("scheduledAmpsMax", 0))
         if schedamps > 0:
@@ -375,14 +383,17 @@ class TWCMaster:
         return self.slaveSign
 
     def getStatus(self):
-
+        chargerLoad = float(self.getChargerLoad())
         data = {
             "carsCharging": self.num_cars_charging_now(),
-            "chargerLoadWatts": "%.2f" % float(self.getChargerLoad()),
+            "chargerLoadWatts": "%.2f" % chargerLoad,
+            "chargerLoadAmps": ("%.2f" % self.convertWattsToAmps(chargerLoad),),
             "currentPolicy": str(self.getModuleByName("Policy").active_policy),
             "maxAmpsToDivideAmongSlaves": "%.2f"
             % float(self.getMaxAmpsToDivideAmongSlaves()),
         }
+        if self.settings.get("sendServerTime", "0") == 1:
+            data["currentServerTime"] = datetime.now().strftime("%Y-%m-%d, %H:%M&nbsp;|&nbsp;")
         consumption = float(self.getConsumption())
         if consumption:
             data["consumptionAmps"] = (
@@ -780,6 +791,7 @@ class TWCMaster:
                     # We have detected that a vehicle has started charging on this Slave TWC
                     # Attempt to request the vehicle's VIN
                     slaveTWC.isCharging = 1
+                    slaveTWC.lastChargingStart = time.time()
                     self.queue_background_task(
                         {
                             "cmd": "getVehicleVIN",
@@ -812,6 +824,7 @@ class TWCMaster:
                     # Close off the current charging session
                     self.recordVehicleSessionEnd(slaveTWC)
                 slaveTWC.isCharging = 0
+                slaveTWC.lastChargingStart = 0
             carsCharging += slaveTWC.isCharging
             for module in self.getModulesByType("Status"):
                 module["ref"].setStatus(
@@ -1270,6 +1283,9 @@ class TWCMaster:
 
     def setNonScheduledAmpsMax(self, amps):
         self.settings["nonScheduledAmpsMax"] = amps
+
+    def setSendServerTime(self, val):
+        self.settings["sendServerTime"] = val
 
     def setScheduledAmpsDaysBitmap(self, bitmap):
         self.settings["scheduledAmpsDaysBitmap"] = bitmap

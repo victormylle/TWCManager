@@ -13,6 +13,7 @@ webbuild: webdeps setup
 config:
 	# Create twcmanager user and group
 	$(SUDO) useradd -U -M $(USER) 2>/dev/null; exit 0
+	$(SUDO) usermod -a -G dialout $(USER)
 
 	# Create configuration directory
 	$(SUDO) mkdir -p /etc/twcmanager
@@ -20,7 +21,7 @@ ifeq (,$(wildcard /etc/twcmanager/config.json))
 	$(SUDO) cp etc/twcmanager/config.json /etc/twcmanager/
 endif
 	$(SUDO) chown $(USER):$(GROUP) /etc/twcmanager -R
-	$(SUDO) chmod 755 /etc/twcmanager
+	$(SUDO) chmod 755 /etc/twcmanager -R
 
 deps:
 	$(SUDO) apt-get update
@@ -57,8 +58,8 @@ testconfig:
 ifeq (,$(wildcard /etc/twcmanager/config.json))
 	$(SUDO) cp etc/twcmanager/.testconfig.json /etc/twcmanager/config.json
 endif
-	$(SUDO) chown 1000:1000 /etc/twcmanager -R
-	$(SUDO) chmod 755 /etc/twcmanager
+	$(SUDO) chown $(USER):$(GROUP) /etc/twcmanager -R
+	$(SUDO) chmod 755 /etc/twcmanager -R
 
 setup:
 	# Install TWCManager packages

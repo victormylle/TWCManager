@@ -16,11 +16,10 @@
               [
                 ["Default", "Default Web Theme"],
                 ["Modern", "Modern Theme"],
-                ["Test", "Test Option (Non Functional)"],
               ],
               {
                 "name": "webControlTheme",
-                "value": master.settings.get("webControlTheme", "Default"),
+                "value": master.settings.get("webControlTheme", "Modern"),
               },
             )|safe }}
           </td>
@@ -65,6 +64,21 @@
                    "name": "nonScheduledAmpsMax",
                    "value": master.settings.get("nonScheduledAmpsMax", "6")
                  })|safe }}
+          </td>
+        </tr>
+        <tr>
+          <th>Include ServerTime in Main UI:</th>
+          <td>
+            {{ optionList(
+              [
+                [0, "Do not include Server Time"],
+                [1, "Include Server Time"],
+              ],
+              {
+                "name": "sendServerTime",
+                "value": master.settings.get("sendServerTime", 0),
+              },
+            )|safe }}
           </td>
         </tr>
         <tr>
