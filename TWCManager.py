@@ -90,7 +90,6 @@ modules_available = [
     "EMS.Efergy",
     "EMS.Enphase",
     "EMS.Fronius",
-    "EMS.Growatt",
     "EMS.HASS",
     "EMS.Kostal",
     "EMS.OpenHab",
@@ -334,7 +333,6 @@ def check_green_energy():
         if (module["name"] == "HASS"):
             if module["ref"].hassEntityOverProduction:
                 master.usingGridValues = True
-                logger.info("jajajajah")
                 master.setOverProduction(
                     module["name"], module["ref"].getOverProduction())
 
