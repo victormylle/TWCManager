@@ -393,7 +393,8 @@ class TWCMaster:
             % float(self.getMaxAmpsToDivideAmongSlaves()),
         }
         if self.settings.get("sendServerTime", "0") == 1:
-            data["currentServerTime"] = datetime.now().strftime("%Y-%m-%d, %H:%M&nbsp;|&nbsp;")
+            data["currentServerTime"] = datetime.now().strftime(
+                "%Y-%m-%d, %H:%M&nbsp;|&nbsp;")
         consumption = float(self.getConsumption())
         if consumption:
             data["consumptionAmps"] = (
@@ -592,8 +593,11 @@ class TWCMaster:
             self.num_cars_charging_now() *
             self.config["config"]["minAmpsPerTWC"],
         )
+
+        # generationW = generationW
+        # generationW - consumptionW =
         newOffer = currentOffer + \
-            self.convertWattsToAmps(overProduction - consumptionW)
+            self.convertWattsToAmps(overProduction)
 
         # This is the *de novo* calculation of how much we can offer
         #
@@ -603,6 +607,8 @@ class TWCMaster:
         # generation - consumption + charger load
         # solarW = float(generationW - generationOffset)
 
+        # generationOffset = consumption - chargerload
+
         if overProduction > 0:
             solarW = float(overProduction + self.getChargerLoad())
         else:
@@ -611,8 +617,8 @@ class TWCMaster:
         solarAmps = self.convertWattsToAmps(solarW)
 
         # Offer the smaller of the two, but not less than zero.
-        amps = max(solarAmps /
-                   self.getRealPowerFactor(solarAmps), 0)
+        amps = max(min(newOffer, solarAmps /
+                   self.getRealPowerFactor(solarAmps)), 0)
         return round(amps, 2)
 
     def getNormalChargeLimit(self, ID):
