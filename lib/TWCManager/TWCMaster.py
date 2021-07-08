@@ -86,8 +86,8 @@ class TWCMaster:
         self.TWCID = TWCID
         self.subtractChargerLoad = config["config"]["subtractChargerLoad"]
         self.advanceHistorySnap()
-        self.maxGreenEnergyAmps = config["config"].get(
-            "maxGreenEnergyAmps", -1)
+        self.maxGreenEnergyAmps = int(config["config"].get(
+            "maxGreenEnergyAmps", -1))
 
         # Register ourself as a module, allows lookups via the Module architecture
         self.registerModule({"name": "master", "ref": self, "type": "Master"})
