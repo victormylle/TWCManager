@@ -68,6 +68,7 @@ class TWCMaster:
     teslaLoginAskLater = False
     TWCID = None
     version = "1.2.3"
+    maxGreenEnergyAmps = -1
 
     # TWCs send a seemingly-random byte after their 2-byte TWC id in a number of
     # messages. I call this byte their "Sign" for lack of a better term. The byte
@@ -85,6 +86,8 @@ class TWCMaster:
         self.TWCID = TWCID
         self.subtractChargerLoad = config["config"]["subtractChargerLoad"]
         self.advanceHistorySnap()
+        self.maxGreenEnergyAmps = config["config"].get(
+            "maxGreenEnergyAmps", -1)
 
         # Register ourself as a module, allows lookups via the Module architecture
         self.registerModule({"name": "master", "ref": self, "type": "Master"})
@@ -619,6 +622,9 @@ class TWCMaster:
         # Offer the smaller of the two, but not less than zero.
         amps = max(min(newOffer, solarAmps /
                    self.getRealPowerFactor(solarAmps)), 0)
+
+        if self.maxGreenEnergyAmps != -1:
+            amps = min(amps, self.maxGreenEnergyAmps)
         return round(amps, 2)
 
     def getNormalChargeLimit(self, ID):
@@ -1278,8 +1284,6 @@ class TWCMaster:
             amps = self.config["config"]["wiringMaxAmpsAllTWCs"]
 
         self.maxAmpsToDivideAmongSlaves = amps
-
-        logger.info("AMPSSSSSS: " + str(self.maxAmpsToDivideAmongSlaves))
 
         self.releaseBackgroundTasksLock()
 

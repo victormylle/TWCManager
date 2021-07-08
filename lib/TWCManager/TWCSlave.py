@@ -946,7 +946,6 @@ class TWCSlave:
                     if now - self.timeLastAmpsOfferedChanged < 5:
                         desiredAmpsOffered = self.lastAmpsOffered
 
-            logger.info("Ampsss: " + str(desiredAmpsOffered))
         # set_last_amps_offered does some final checks to see if the new
         # desiredAmpsOffered is safe. It should be called after we've picked a
         # final value for desiredAmpsOffered.

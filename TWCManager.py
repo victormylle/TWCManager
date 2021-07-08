@@ -421,8 +421,7 @@ def update_statuses():
                     extra=logExtra,
                 )
         else:
-            if ((ovwatts or conwatts) and (not conoffset and not othwatts)):
-
+            if ((ovwatts or conwatts) and not conoffset):
                 if (ovwatts > 0):
                     logger.info(
                         "Green energy deliverers %s to grid (Charger Load %s)",
@@ -437,46 +436,6 @@ def update_statuses():
                         f("{chgwatts:.0f}W"),
                         extra=logExtra,
                     )
-
-            elif ((ovwatts or conwatts) and not conoffset):
-                if (ovwatts > 0):
-                    logger.info(
-                        "Green energy deliverers %s to grid (Charger Load %s)",
-                        f("{ovwatts:.0f}W"),
-                        f("{chgwatts:.0f}W"),
-                        extra=logExtra,
-                    )
-                else:
-                    logger.info(
-                        "Green energy takes %s from grid (Charger Load %s)",
-                        f("{conwatts:.0f}W"),
-                        f("{chgwatts:.0f}W"),
-                        extra=logExtra,
-                    )
-
-            elif ((genwatts or conwatts) and othwatts and conoffset > 0):
-
-                logger.info(
-                    "Green energy Generates %s, Consumption %s (Charger Load %s, Other Load %s, Offset %s)",
-                    f("{genwatts:.0f}W"),
-                    f("{conwatts:.0f}W"),
-                    f("{chgwatts:.0f}W"),
-                    f("{othwatts:.0f}W"),
-                    f("{conoffset:.0f}W"),
-                    extra=logExtra,
-                )
-
-            elif ((genwatts or conwatts) and othwatts and conoffset < 0):
-
-                logger.info(
-                    "Green energy Generates %s (Offset %s), Consumption %s (Charger Load %s, Other Load %s)",
-                    f("{genwatts:.0f}W"),
-                    f("{(-1 * conoffset):.0f}W"),
-                    f("{conwatts:.0f}W"),
-                    f("{chgwatts:.0f}W"),
-                    f("{othwatts:.0f}W"),
-                    extra=logExtra,
-                )
 
         if usingGridValues:
             nominalOffer = master.convertWattsToAmps(
