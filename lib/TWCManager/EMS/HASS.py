@@ -12,7 +12,7 @@ class HASS:
     import time
 
     apiKey = None
-    cacheTime = 10
+    cacheTime = 1
     config = None
     configConfig = None
     configHASS = None
