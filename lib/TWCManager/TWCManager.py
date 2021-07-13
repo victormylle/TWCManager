@@ -1,11 +1,31 @@
 #! /usr/bin/python3
 
-##################################################################################
-# IMPORTANT! PLEASE NOTE
-# This file is moving - it will be moved to lib/TWCManager/TWCManager.py very soon
-# all changes should be made to that file instead. This file will be replaced by
-# TWCManager-new.py. Any PRs referencing changes to this file will be rejected.
-# Please see https://github.com/ngardiner/TWCManager/issues/331 for more details
+################################################################################
+# Code and TWC protocol reverse engineering by Chris Dragon.
+#
+# Additional logs and hints provided by Teslamotorsclub.com users:
+#   TheNoOne, IanAmber, and twc.
+# Thank you!
+#
+# For support and information, please read through this thread:
+# https://teslamotorsclub.com/tmc/threads/new-wall-connector-load-sharing-protocol.72830
+#
+# Report bugs at https://github.com/ngardiner/TWCManager/issues
+#
+# This software is released under the "Unlicense" model: http://unlicense.org
+# This means source code and TWC protocol knowledge are released to the general
+# public free for personal or commercial use. I hope the knowledge will be used
+# to increase the use of green energy sources by controlling the time and power
+# level of car charging.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+# ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+# For more information, please visit http://unlicense.org
 
 import commentjson
 import importlib
@@ -20,7 +40,7 @@ import traceback
 from datetime import datetime
 import threading
 from ww import f
-from lib.TWCManager.TWCMaster import TWCMaster
+from TWCManager.TWCMaster import TWCMaster
 import requests
 from enum import Enum
 
@@ -66,10 +86,11 @@ modules_available = [
     "Control.WebIPCControl",
     "Control.HTTPControl",
     "Control.MQTTControl",
-    #    "Control.OCPPControl",
+#    "Control.OCPPControl",
     "EMS.Efergy",
     "EMS.Enphase",
     "EMS.Fronius",
+    "EMS.Growatt",
     "EMS.HASS",
     "EMS.Kostal",
     "EMS.OpenHab",
@@ -190,9 +211,9 @@ def unescape_msg(inmsg: bytearray, msgLen):
                 # shortening the string by one character. In Python, msg[x:y]
                 # refers to a substring starting at x and ending immediately
                 # before y. y - x is the length of the substring.
-                msg[i: i + 2] = [0xC0]
+                msg[i : i + 2] = [0xC0]
             elif msg[i + 1] == 0xDD:
-                msg[i: i + 2] = [0xDB]
+                msg[i : i + 2] = [0xDB]
             else:
                 logger.info(
                     "ERROR: Special character 0xDB in message is "
@@ -202,11 +223,11 @@ def unescape_msg(inmsg: bytearray, msgLen):
 
                 # Replace the character with something even though it's probably
                 # not the right thing.
-                msg[i: i + 2] = [0xDB]
+                msg[i : i + 2] = [0xDB]
         i = i + 1
 
     # Remove leading and trailing C0 byte.
-    msg = msg[1: len(msg) - 1]
+    msg = msg[1 : len(msg) - 1]
     return msg
 
 
@@ -250,11 +271,9 @@ def background_tasks_thread(master):
 
                 if task["subTWC"]:
                     if master.checkVINEntitlement(task["subTWC"]):
-                        logger.info("Vehicle %s on TWC %02X%02X is permitted to charge." % (
-                            task["subTWC"].currentVIN, task["subTWC"].TWCID[0], task["subTWC"].TWCID[1]))
+                        logger.info("Vehicle %s on TWC %02X%02X is permitted to charge." % (task["subTWC"].currentVIN, task["subTWC"].TWCID[0], task["subTWC"].TWCID[1]))
                     else:
-                        logger.info("Vehicle %s on TWC %02X%02X is not permitted to charge. Terminating session." % (
-                            task["subTWC"].currentVIN, task["subTWC"].TWCID[0], task["subTWC"].TWCID[1]))
+                        logger.info("Vehicle %s on TWC %02X%02X is not permitted to charge. Terminating session." % (task["subTWC"].currentVIN, task["subTWC"].TWCID[0], task["subTWC"].TWCID[1]))
                         master.sendStopCommand(task["subTWC"].TWCID)
 
             elif task["cmd"] == "getLifetimekWh":
@@ -310,16 +329,9 @@ def check_green_energy():
         master.setConsumption(module["name"], module["ref"].getConsumption())
         master.setGeneration(module["name"], module["ref"].getGeneration())
 
-        if (module["name"] == "HASS"):
-            if module["ref"].hassEntityOverProduction:
-                master.usingGridValues = True
-                master.setOverProduction(
-                    module["name"], module["ref"].getOverProduction())
-
     # Set max amps iff charge_amps isn't specified on the policy.
     if master.getModuleByName("Policy").policyIsGreen():
-        master.setMaxAmpsToDivideAmongSlaves(
-            master.getMaxAmpsToDivideGreenEnergy())
+        master.setMaxAmpsToDivideAmongSlaves(master.getMaxAmpsToDivideGreenEnergy())
 
 
 def update_statuses():
@@ -397,11 +409,8 @@ def update_statuses():
             )
 
         nominalOffer = master.convertWattsToAmps(
-            genwatts +
-            (chgwatts if (
-                config["config"]["subtractChargerLoad"] and conwatts == 0) else 0)
-            - (conwatts - (chgwatts if (config["config"]
-               ["subtractChargerLoad"] and conwatts > 0) else 0))
+            genwatts + (chgwatts if (config["config"]["subtractChargerLoad"] and conwatts == 0) else 0)
+            - (conwatts - (chgwatts if (config["config"]["subtractChargerLoad"] and conwatts > 0) else 0))
         )
         if abs(maxamps - nominalOffer) > 0.005:
             nominalOfferDisplay = f("{nominalOffer:.2f}A")
@@ -509,7 +518,7 @@ for module in modules_available:
             # We can see that this module is explicitly disabled in config, skip it
             continue
 
-        moduleref = importlib.import_module("lib.TWCManager." + module)
+        moduleref = importlib.import_module("TWCManager." + module)
         modclassref = getattr(moduleref, modulename[1])
         modinstance = modclassref(master)
 
@@ -544,8 +553,7 @@ master.loadSettings()
 # Create a background thread to handle tasks that take too long on the main
 # thread.  For a primer on threads in Python, see:
 # http://www.laurentluce.com/posts/python-threads-synchronization-locks-rlocks-semaphores-conditions-events-and-queues/
-backgroundTasksThread = threading.Thread(
-    target=background_tasks_thread, args=(master,))
+backgroundTasksThread = threading.Thread(target=background_tasks_thread, args=(master,))
 backgroundTasksThread.daemon = True
 backgroundTasksThread.start()
 
@@ -599,8 +607,7 @@ while True:
                 if time.time() - master.getTimeLastTx() >= 1.0:
                     # It's been about a second since our last heartbeat.
                     if master.countSlaveTWC() > 0:
-                        slaveTWC = master.getSlaveTWC(
-                            idxSlaveToSendNextHeartbeat)
+                        slaveTWC = master.getSlaveTWC(idxSlaveToSendNextHeartbeat)
                         if time.time() - slaveTWC.timeLastRx > 26:
                             # A real master stops sending heartbeats to a slave
                             # that hasn't responded for ~26 seconds. It may
@@ -714,8 +721,7 @@ while True:
                 # We expect to find these non-c0 bytes between messages, so
                 # we don't print any warning at standard debug levels.
                 logger.log(
-                    logging.DEBUG2, "Ignoring byte %02X between messages." % (
-                        data[0])
+                    logging.DEBUG2, "Ignoring byte %02X between messages." % (data[0])
                 )
                 ignoredData += data
                 continue
@@ -739,8 +745,7 @@ while True:
                 continue
             elif dataLen and len(data) == 0:
                 logger.error(
-                    "We received a buffer length of %s from the RS485 module, but data buffer length is %s. This should not occur." % (
-                        str(actualDataLen), str(len(data)))
+                    "We received a buffer length of %s from the RS485 module, but data buffer length is %s. This should not occur." % (str(actualDataLen), str(len(data)))
                 )
 
             if msgLen == 0:
@@ -805,8 +810,7 @@ while True:
 
             logger.log(
                 logging.INFO9,
-                "Rx@" + ": (" + hex_str(ignoredData) + ") " +
-                hex_str(msg) + "",
+                "Rx@" + ": (" + hex_str(ignoredData) + ") " + hex_str(msg) + "",
             )
 
             ignoredData = bytearray()
@@ -844,15 +848,13 @@ while True:
                 # end of the string (even without the re.MULTILINE option), and
                 # sometimes our strings do end with a newline character that is
                 # actually the CRC byte with a value of 0A or 0D.
-                msgMatch = re.search(
-                    b"^\xfd\xb1(..)\x00\x00.+\Z", msg, re.DOTALL)
+                msgMatch = re.search(b"^\xfd\xb1(..)\x00\x00.+\Z", msg, re.DOTALL)
                 if msgMatch and foundMsgMatch == False:
                     # Handle acknowledgement of Start command
                     foundMsgMatch = True
                     senderID = msgMatch.group(1)
 
-                msgMatch = re.search(
-                    b"^\xfd\xb2(..)\x00\x00.+\Z", msg, re.DOTALL)
+                msgMatch = re.search(b"^\xfd\xb2(..)\x00\x00.+\Z", msg, re.DOTALL)
                 if msgMatch and foundMsgMatch == False:
                     # Handle acknowledgement of Stop command
                     foundMsgMatch = True
@@ -877,8 +879,7 @@ while True:
                     foundMsgMatch = True
                     senderID = msgMatch.group(1)
                     sign = msgMatch.group(2)
-                    maxAmps = (
-                        (msgMatch.group(3)[0] << 8) + msgMatch.group(3)[1]) / 100
+                    maxAmps = ((msgMatch.group(3)[0] << 8) + msgMatch.group(3)[1]) / 100
 
                     logger.info(
                         "%.2f amp slave TWC %02X%02X is ready to link.  Sign: %s"
@@ -1121,8 +1122,7 @@ while True:
                         vinPart = 1
                     if vinPart == b"\xf1":
                         vinPart = 2
-                    slaveTWC.VINData[vinPart] = data.decode(
-                        "utf-8").rstrip("\x00")
+                    slaveTWC.VINData[vinPart] = data.decode("utf-8").rstrip("\x00")
                     if vinPart < 2:
                         vinPart += 1
                         master.queue_background_task(
@@ -1170,6 +1170,7 @@ while True:
                                     "vinPart": 0,
                                 }
                             )
+
 
                     logger.log(
                         logging.INFO6,
@@ -1341,11 +1342,9 @@ while True:
                             master.slaveHeartbeatData[1] = heartbeatData[1]
                             master.slaveHeartbeatData[2] = heartbeatData[2]
 
-                            ampsUsed = (
-                                heartbeatData[1] << 8) + heartbeatData[2]
+                            ampsUsed = (heartbeatData[1] << 8) + heartbeatData[2]
                             ampsUsed -= 80
-                            master.slaveHeartbeatData[3] = (
-                                ampsUsed >> 8) & 0xFF
+                            master.slaveHeartbeatData[3] = (ampsUsed >> 8) & 0xFF
                             master.slaveHeartbeatData[4] = ampsUsed & 0xFF
                     elif heartbeatData[0] == 0:
                         if timeTo0Aafter06 > 0 and timeTo0Aafter06 < now:
@@ -1368,8 +1367,7 @@ while True:
                             % (heartbeatData[1], hex_str(heartbeatData))
                         )
                     else:
-                        logger.info("UNKNOWN MHB state %s" %
-                                    (hex_str(heartbeatData)))
+                        logger.info("UNKNOWN MHB state %s" % (hex_str(heartbeatData)))
 
                     # Slaves always respond to master's heartbeat by sending
                     # theirs back.
@@ -1411,8 +1409,7 @@ while True:
                     foundMsgMatch = True
                     senderID = msgMatch.group(1)
                     sign = msgMatch.group(2)
-                    maxAmps = (
-                        (msgMatch.group(3)[0] << 8) + msgMatch.group(3)[1]) / 100
+                    maxAmps = ((msgMatch.group(3)[0] << 8) + msgMatch.group(3)[1]) / 100
                     logger.info(
                         "%.2f amp slave TWC %02X%02X is ready to link.  Sign: %s"
                         % (maxAmps, senderID[0], senderID[1], hex_str(sign))
@@ -1524,8 +1521,7 @@ while True:
                     senderID = msgMatch.group(1)
                     data = msgMatch.group(2)
                     kWhCounter = (
-                        (data[0] << 24) + (data[1] << 16) +
-                        (data[2] << 8) + data[3]
+                        (data[0] << 24) + (data[1] << 16) + (data[2] << 8) + data[3]
                     )
                     voltsPhaseA = (data[4] << 8) + data[5]
                     voltsPhaseB = (data[6] << 8) + data[7]
@@ -1557,8 +1553,7 @@ while True:
                     )
 
                 if foundMsgMatch == False:
-                    logger.info(
-                        "***UNKNOWN MESSAGE from master: " + hex_str(msg))
+                    logger.info("***UNKNOWN MESSAGE from master: " + hex_str(msg))
 
     except KeyboardInterrupt:
         logger.info("Exiting after background tasks complete...")
