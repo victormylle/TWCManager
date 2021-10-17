@@ -1,6 +1,6 @@
 #! /usr/bin/python3
 
-from lib.TWCManager.TWCSlave import TWCSlave
+from TWCManager.TWCSlave import TWCSlave
 from datetime import datetime, timedelta
 import json
 import logging
@@ -12,9 +12,10 @@ import time
 from ww import f
 import math
 import random
+import requests
 import bisect
 
-logger = logging.getLogger(__name__.rsplit(".")[-1])
+logger = logging.getLogger("\u26FD Master")
 
 
 class TWCMaster:
@@ -32,6 +33,7 @@ class TWCMaster:
     lastkWhPoll = 0
     lastSaveFailed = 0
     lastTWCResponseMsg = None
+    lastUpdateCheck = 0
     masterTWCID = ""
     maxAmpsToDivideAmongSlaves = 0
     modules = {}
@@ -53,7 +55,7 @@ class TWCMaster:
         "scheduledAmpsEndHour": -1,
         "scheduledAmpsMax": 0,
         "scheduledAmpsStartHour": -1,
-        "sendServerTime": 0
+        "sendServerTime": 0,
     }
     slaveHeartbeatData = bytearray(
         [0x01, 0x0F, 0xA0, 0x0F, 0xA0, 0x00, 0x00, 0x00, 0x00]
@@ -65,7 +67,8 @@ class TWCMaster:
     subtractChargerLoad = False
     teslaLoginAskLater = False
     TWCID = None
-    version = "1.2.3"
+    updateVersion = False
+    version = "1.2.4"
 
     # TWCs send a seemingly-random byte after their 2-byte TWC id in a number of
     # messages. I call this byte their "Sign" for lack of a better term. The byte
@@ -101,6 +104,53 @@ class TWCMaster:
             )
         except ValueError as e:
             logger.debug("Exception in advanceHistorySnap: " + str(e))
+
+    def cancelStopCarsCharging(self):
+        self.delete_background_task({"cmd": "charge", "charge": False})
+
+    def checkForUpdates(self):
+        # This function is used by the Web UI and later on will be used by the console to detect TWCManager Updates
+        # It runs a maximum of once per hour, and queries the current PyPi package version vs the current version
+        # If they match, it returns false. If there's a different version available, we alert the user
+        if time.time() > self.lastUpdateCheck + (60 * 60):
+            self.lastUpdateCheck = time.time()
+
+            # Fetch the JSON data from PyPi for our package
+            url = "https://pypi.org/pypi/twcmanager/json"
+
+            try:
+                req = requests.get(url)
+                logger.log(logging.INFO8, "Requesting PyPi package info " + str(req))
+                pkgInfo = json.loads(req.text)
+            except requests.exceptions.RequestException:
+                logger.info("Failed to fetch package details " + url)
+                logger.log(logging.INFO6, "Response: " + req.text)
+                pass
+            except json.decoder.JSONDecodeError:
+                logger.info("Could not parse JSON result from " + url)
+                logger.log(logging.INFO6, "Response: " + req.text)
+                pass
+
+            if pkgInfo.get("info", {}).get("version", None):
+                if pkgInfo["info"]["version"] != self.version:
+                    # Versions don't match. Let's make sure the new one really is newer
+                    current_arr = [int(v) for v in self.version.split(".")]
+                    avail_arr = [int(v) for v in pkgInfo["info"]["version"].split(".")]
+                    for i in range(max(len(current_arr), len(avail_arr))):
+                        v1 = current_arr[i] if i < len(current_arr) else 0
+                        v2 = avail_arr[i] if i < len(avail_arr) else 0
+
+                        # If any element of current version in order from first to last is lower than available version,
+                        # advertise newer version
+                        if v1 < v2:
+                            self.updateVersion = pkgInfo["info"]["version"]
+                            break
+
+                        # If current version is greater than available version, do not advertise newer version
+                        if v1 > v2:
+                            break
+
+        return self.updateVersion
 
     def checkModuleCapability(self, type, capability):
         # For modules which advertise capabilities, scan all loaded modules of a certain type and
@@ -169,7 +219,10 @@ class TWCMaster:
         if str(self.settings.get("chargeAuthorizationMode", "1")) == "1":
             # In this mode, we allow all vehicles to charge unless they
             # are explicitly banned from charging
-            if subTWC.currentVIN in self.settings["VehicleGroups"]["Deny Charging"]["Members"]:
+            if (
+                subTWC.currentVIN
+                in self.settings["VehicleGroups"]["Deny Charging"]["Members"]
+            ):
                 return 0
             else:
                 return 1
@@ -177,7 +230,10 @@ class TWCMaster:
         elif str(self.settings.get("chargeAuthorizationMode", "1")) == "2":
             # In this mode, vehicles may only charge if they are listed
             # in the Allowed VINs list
-            if subTWC.currentVIN in self.settings["VehicleGroups"]["Allow Charging"]["Members"]:
+            if (
+                subTWC.currentVIN
+                in self.settings["VehicleGroups"]["Allow Charging"]["Members"]
+            ):
                 return 1
             else:
                 return 0
@@ -193,10 +249,21 @@ class TWCMaster:
     def countSlaveTWC(self):
         return int(len(self.slaveTWCRoundRobin))
 
-    def deleteBackgroundTask(self, task):
-        del self.backgroundTasksCmds[task["cmd"]]
+    def delete_background_task(self, task):
+        if (
+            task["cmd"] in self.backgroundTasksCmds
+            and self.backgroundTasksCmds[task["cmd"]] == task
+        ):
+            del self.backgroundTasksCmds[task["cmd"]]["cmd"]
+            del self.backgroundTasksCmds[task["cmd"]]
 
-    def doneBackgroundTask(self):
+    def doneBackgroundTask(self, task):
+
+        # Delete task['cmd'] from backgroundTasksCmds such that
+        # queue_background_task() can queue another task['cmd'] in the future.
+        if "cmd" in task:
+            del self.backgroundTasksCmds[task["cmd"]]
+
         # task_done() must be called to let the queue know the task is finished.
         # backgroundTasksQueue.join() can then be used to block until all tasks
         # in the queue are done.
@@ -239,7 +306,8 @@ class TWCMaster:
         # Start by reading the offset value from config, if it exists
         # This is a legacy value but it doesn't hurt to keep it
         offset = self.convertAmpsToWatts(
-            self.config["config"].get("greenEnergyAmpsOffset", 0))
+            self.config["config"].get("greenEnergyAmpsOffset", 0)
+        )
 
         # Iterate through the offsets listed in settings
         for offsetName in self.settings.get("consumptionOffset", {}).keys():
@@ -247,7 +315,8 @@ class TWCMaster:
                 offset += self.settings["consumptionOffset"][offsetName]["value"]
             else:
                 offset += self.convertAmpsToWatts(
-                    self.settings["consumptionOffset"][offsetName]["value"])
+                    self.settings["consumptionOffset"][offsetName]["value"]
+                )
         return offset
 
     def getHourResumeTrackGreenEnergy(self):
@@ -386,7 +455,9 @@ class TWCMaster:
             % float(self.getMaxAmpsToDivideAmongSlaves()),
         }
         if self.settings.get("sendServerTime", "0") == 1:
-            data["currentServerTime"] = datetime.now().strftime("%Y-%m-%d, %H:%M&nbsp;|&nbsp;")
+            data["currentServerTime"] = datetime.now().strftime(
+                "%Y-%m-%d, %H:%M&nbsp;|&nbsp;"
+            )
         consumption = float(self.getConsumption())
         if consumption:
             data["consumptionAmps"] = ("%.2f" % self.convertWattsToAmps(consumption),)
@@ -525,7 +596,7 @@ class TWCMaster:
 
         offset = self.getConsumptionOffset()
         if offset < 0:
-            generationVal += (-1 * offset)
+            generationVal += -1 * offset
 
         return float(generationVal)
 
@@ -697,13 +768,13 @@ class TWCMaster:
             self.settings["VehicleGroups"]["Allow Charging"] = {
                 "Description": "Built-in Group - Vehicles in this Group can charge on managed TWCs",
                 "Built-in": 1,
-                "Members": []
+                "Members": [],
             }
         if not self.settings["VehicleGroups"].get("Deny Charging", None):
             self.settings["VehicleGroups"]["Deny Charging"] = {
                 "Description": "Built-in Group - Vehicles in this Group cannot charge on managed TWCs",
                 "Built-in": 1,
-                "Members": []
+                "Members": [],
             }
 
     def master_id_conflict(self):
@@ -1031,7 +1102,9 @@ class TWCMaster:
                 json.dump(self.settings, outconfig)
             self.lastSaveFailed = 0
         except PermissionError as e:
-            logger.info("Permission Denied trying to save to settings.json. Please check the permissions of the file and try again.")
+            logger.info(
+                "Permission Denied trying to save to settings.json. Please check the permissions of the file and try again."
+            )
             self.lastSaveFailed = 1
         except TypeError as e:
             logger.info("Exception raised while attempting to save settings file:")
@@ -1152,11 +1225,11 @@ class TWCMaster:
                 + bytearray(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00")
             )
 
-    def sendStopCommand(self, subTWC = None):
+    def sendStopCommand(self, subTWC=None):
         # This function will loop through each of the Slave TWCs, and send them the stop command.
         # If the subTWC parameter is supplied, we only stop the specified TWC
         for slaveTWC in self.getSlaveTWCs():
-            if ((not subTWC) or (subTWC == slaveTWC.TWCID)):
+            if (not subTWC) or (subTWC == slaveTWC.TWCID):
                 self.getInterfaceModule().send(
                     bytearray(b"\xFC\xB2")
                     + self.TWCID
@@ -1343,25 +1416,37 @@ class TWCMaster:
             "%H:%M:%S" + (".%f" if self.config["config"]["displayMilliseconds"] else "")
         )
 
+    def tokenSyncEnabled(self):
+        # TODO: Should not be hardcoded
+        # Check if any modules are performing token sync from other projects or interfaces
+        # if so, we do not prompt locally for authentication and we don't use our own settings
+        tokenSync = False
+
+        if self.getModuleByName("TeslaMateVehicle"):
+            if self.getModuleByName("TeslaMateVehicle").syncTokens:
+                tokenSync = True
+
+        return tokenSync
+
     def translateModuleNameToConfig(self, modulename):
         # This function takes a module name (eg. EMS.Fronius) and returns a config section (Sources.Fronius)
         # It makes it easier for us to determine where a module's config should be
-        configloc = [ "", "" ]
+        configloc = ["", ""]
         if modulename[0] == "Control":
-            configloc[0] = "control";
-            configloc[1] = str(modulename[1]).replace('Control','')
+            configloc[0] = "control"
+            configloc[1] = str(modulename[1]).replace("Control", "")
         elif modulename[0] == "EMS":
-            configloc[0] = "sources";
+            configloc[0] = "sources"
             configloc[1] = modulename[1]
         elif modulename[0] == "Interface":
-            configloc[0] = "interface";
+            configloc[0] = "interface"
             configloc[1] = modulename[1]
         elif modulename[0] == "Logging":
-            configloc[0] = "logging";
-            configloc[1] = str(modulename[1]).replace('Logging','')
+            configloc[0] = "logging"
+            configloc[1] = str(modulename[1]).replace("Logging", "")
         elif modulename[0] == "Status":
-            configloc[0] = "status";
-            configloc[1] = str(modulename[1]).replace('Status','')
+            configloc[0] = "status"
+            configloc[1] = str(modulename[1]).replace("Status", "")
         else:
             return modulename
 

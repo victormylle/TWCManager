@@ -2,7 +2,23 @@
 
 This document logs the changes per release of TWCManager.
 
-## v1.2.3 - Current development version
+## v1.3.0 - Latest Development Version
+
+## v1.2.4 - 2021-08-31
+
+  * Bugfixes:
+      * (@MikeBishop) - Fix debounce mechanism to avoid continuous charging when minimum generation is not met in some circumstances
+      * (@ngardiner) - Align web interface TWCID so that it is lowercase, avoiding issues with JavaScript and Jinja2 misalignment
+      * (@ngardiner) - Change cryptography module dependency to avoid versions requiring rust compiler
+      * (@ngardiner) - Add logic to set token expiry time when manually adding tokens
+ * (@MikeBishop) - Change to Powerwall Auth handling to expire auth tokens earlier due to changes in Powerwall auth handling
+ * (@ngardiner) - Add version check to Web UI
+ * (@ngardiner) - Add handling of recaptcha challenge (with DNS workaround), and provide other options if this is not possible
+ * (@ngardiner) - Add Tesla API debug interface to allow sending Tesla API commands
+ * (@ngardiner) - Added TeslaMate sync functionality to allow sync of telemetry and API token details
+ * (@MikeBishop) - Restrict dampening to green policies only, and prefer to keep charging vs stop/start
+
+## v1.2.3 - 2021-08-10
 
   * **NOTE**: v1.2.3 contains a potentially breaking change for users of OpenWB or the Legacy Web Interface
      * As of v1.2.3, the Legacy Web Interface and its dependencies such as lighttpd and php are no longer installed by default.
@@ -15,6 +31,13 @@ This document logs the changes per release of TWCManager.
   * (@VIDGuide) - Fixed Modern UI layout on mobile, added Stop Charge Now button and fixed Charge Now control spacing.
   * (@VIDGuide) - Add Timezone parameter to docker-compose files to allow specifying container timezone
   * (@the-dbp) - Added Growatt EMS module
+  * (@jherby2k) - Align API and HASS Status module values
+  * (@mvaneijken) - Add MySQL logging module Port parameter
+  * (@ngardiner) - Refactor TWCManager structure to allow for entire project to be packaged into pypi packaging for easy install/upgrades
+  * (@jherby2k) - Add IotaWatt EMS interface
+  * (@mvaneijken) - Added P1 Monitor EMS module
+  * (@jherby2k) - Add support for HomeAssistant integration
+  * (@MikeBishop) - Add support for deleting tasks, avoid sending stop commands under some conditions to avoid unnecessary transitions
 
 ## v1.2.2 - 2021-06-09
 
