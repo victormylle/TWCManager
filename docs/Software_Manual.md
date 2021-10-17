@@ -16,7 +16,7 @@ The following packages are required to fetch and install the TWCManager project.
 
 ```
 sudo apt-get update
-sudo apt-get install -y git python3 python3-setuptools python3-dev
+sudo apt-get install -y git python3 python3-setuptools python3-dev libatlas-base-dev
 ```
 
 ## Default to Python3
@@ -68,13 +68,13 @@ You can check that this command has been successful by running ```python --versi
 
 During this step, the source code and all related files will be cloned from the GitHub repository and installed into the appropriate location on your system.
 
-We have two versions of the codebase that you may want to check out. The stable version is **v1.2.1**, which will only change for stability or urgent fixes. To check out **v1.2.1**, follow these steps:
+We have two versions of the codebase that you may want to check out. The stable version is **v1.2.2**, which will only change for stability or urgent fixes. To check out **v1.2.2**, follow these steps:
 
 
 ```
 git clone https://github.com/ngardiner/TWCManager
 cd TWCManager
-git checkout v1.2.1
+git checkout v1.2.3
 sudo make install
 ```
 
@@ -96,14 +96,6 @@ The following documents provide detail on specific areas of configuration:
 
 ## Running TWCManager
 Once the above steps are complete, start the TWCManager script with the following command:
-
-Prior to v1.2.3:
-
-```
-python -m TWCManager
-```
-
-From v1.2.3 onwards:
 
 ```
 sudo -u twcmanager python -m TWCManager
@@ -149,4 +141,38 @@ journalctl -f
 To disable the TWCManager service permanently use the following command.  This will persist after rebooting.
 ```
 sudo systemctl disable twcmanager
+```
+
+## Upgrading TWCManager
+
+### Stable Release
+
+From version v1.2.3 of TWCManager and beyond, you can use pip to upgrade TWCManager to the latest stable version.
+
+To upgrade TWCManager to the latest version:
+
+```
+sudo pip install --upgrade twcmanager
+```
+
+### Development Version
+
+If you would prefer to upgrade to the latest Development release, you should do the following:
+
+   * Enter the directory in which the TWCManager sources are downloaded
+
+```
+cd /home/pi/TWCManager
+```
+
+   * Download the latest updates using git
+
+```
+git pull
+```
+
+   * Build the latest TWCManager package
+
+```
+make install
 ```

@@ -6,7 +6,7 @@ import time
 from ww import f
 
 
-logger = logging.getLogger(__name__.rsplit(".")[-1])
+logger = logging.getLogger("\U0001F4CA HASS")
 
 
 class HASSStatus:
@@ -183,9 +183,7 @@ class HASSStatus:
 
     def settingRetryRate(self, msg):
         # Setting elapsing time to now + retryRateInSeconds
-        self.msgQueue[msg.sensor].elapsingTime = (
-            time.time() + self.retryRateInSeconds
-        )
+        self.msgQueue[msg.sensor].elapsingTime = time.time() + self.retryRateInSeconds
 
 
 class HASSMessage:
