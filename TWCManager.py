@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import TWCManager.TWCManager
 import os
 import grp
 import pwd
@@ -31,3 +30,5 @@ if "." in sys.path:
 
 if os.path.dirname(os.path.realpath(__file__)) in sys.path:
     sys.path.remove(os.path.dirname(os.path.realpath(__file__)))
+    
+import TWCManager.TWCManager
