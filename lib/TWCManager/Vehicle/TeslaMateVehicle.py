@@ -116,6 +116,7 @@ class TeslaMateVehicle:
                     database=self.__db_name,
                     user=self.__db_user,
                     password=self.__db_pass,
+                    port=5433
                 )
             except psycopg2.OperationalError as e:
                 logger.log(
