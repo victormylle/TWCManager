@@ -100,7 +100,7 @@ class TeslaAPI:
             return True
         elif command == "wakeVehicle":
             # self.wakeVehicle(vehicle)
-            self.car_api_charge(True)
+            self.car_api_charge(False)
             return True
         
 
