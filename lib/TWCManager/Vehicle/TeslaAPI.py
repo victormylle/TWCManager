@@ -61,9 +61,6 @@ class TeslaAPI:
         "vehicle unavailable",
     ]
 
-    # Define minutes between retrying non-transient errors.
-    carApiErrorRetryMins = 10
-
     def __init__(self, master):
         self.master = master
         try:
@@ -1126,7 +1123,8 @@ class TeslaAPI:
         errorCount = self.errorCount
         if vehicle:
             errorCount = max(vehicle.errorCount, errorCount)
-        return pow(2, min(max(errorCount - 1, 0), 6))
+        errorCount = max(errorCount - 1, 0)
+        return min(errorCount, 10)
 
     def getCarApiLastErrorTime(self):
         return self.carApiLastErrorTime
@@ -1273,18 +1271,25 @@ class TeslaAPI:
         self.carApiTokenExpireTime = value
         return True
 
-    def setChargeRate(self, charge_rate, vehicle):
+    def setChargeRate(self, charge_rate, vehicle=None):
+
+        # As a fallback to allow initial implementation of the charge rate functionality for single car installs,
+        # If no vehcle is specified, we take the first returned to us.
+
+        if not vehicle:
+            vehicle = self.getCarApiVehicles()[0]
+
         vehicle.lastAPIAccessTime = time.time()
 
         url = "https://owner-api.teslamotors.com/api/1/vehicles/"
-        url = url + str(vehicle.ID) + "/set_charging_amps"
+        url = url + str(vehicle.ID) + "/command/set_charging_amps"
 
         headers = {
             "accept": "application/json",
             "Authorization": "Bearer " + self.getCarApiBearerToken(),
         }
 
-        body = {"amps": charge_rate}
+        body = {"charging_amps": charge_rate}
 
         try:
             req = requests.post(url, headers=headers, json=body)
