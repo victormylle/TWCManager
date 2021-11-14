@@ -27,6 +27,7 @@ class TWCMaster:
     backgroundTasksDelayed = []
     config = None
     consumptionValues = {}
+    overProductionValues = {}
     debugOutputToFile = False
     generationValues = {}
     lastkWhMessage = time.time()
@@ -579,7 +580,20 @@ class TWCMaster:
         if offset > 0:
             consumptionVal += offset
 
+        consumptionVal += self.getOverProduction()
+
         return float(consumptionVal)
+
+    def getOverProduction(self):
+        overProductionVal = 0
+
+        for key in self.overProductionValues:
+            overProductionVal += float(self.overProductionValues[key])
+
+        if overProductionVal < 0:
+            overProductionVal = 0
+
+        return float(overProductionVal)
 
     def getFakeTWCID(self):
         return self.TWCID
@@ -1263,6 +1277,9 @@ class TWCMaster:
 
     def setGeneration(self, source, value):
         self.generationValues[source] = value
+
+    def setOverProduction(self, source, value):
+        self.overProductionValues[source] = value
 
     def setHomeLat(self, lat):
         self.settings["homeLat"] = lat
