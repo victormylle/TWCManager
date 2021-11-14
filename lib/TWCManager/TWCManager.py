@@ -366,7 +366,7 @@ def update_statuses():
 
         if config["config"]["subtractChargerLoad"]:
             if conwatts + genwatts > 0:
-                othwatts = conwatts - chgwatts + genwatts
+                othwatts = conwatts - chgwatts
 
             if conoffset > 0:
                 othwatts -= conoffset
