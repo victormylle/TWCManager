@@ -59,6 +59,17 @@ class HASS:
             self.master.releaseModule("lib.TWCManager.EMS", "HASS")
             return None
 
+    def getOverProduction(self):
+        if not self.status:
+            logger.debug("Module Disabled. Skipping getOverProduction")
+            return 0
+
+        # Perform updates if necessary
+        self.update()
+
+        # Return consumption value
+        return self.overProductionW
+
     def getConsumption(self):
 
         if not self.status:
