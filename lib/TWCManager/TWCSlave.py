@@ -443,10 +443,11 @@ class TWCSlave:
             # TODO: Start and stop charging using protocol 2 commands to TWC
             # instead of car api if I ever figure out how.
         
-            print("I want to stop charging")
-
             if self.lastAmpsOffered == 0 and self.reportedAmpsActual > 4.0:
                 now = time.time()
+
+                print("I want to stop charging")
+
 
                 if (
                     now - self.timeLastAmpsOfferedChanged < 60
@@ -454,6 +455,8 @@ class TWCSlave:
                     < self.startStopDelay
                     or self.reportedAmpsActual < 4.0
                 ):
+
+                    print("dont stopping charging")
                     # We want to tell the car to stop charging. However, it's
                     # been less than a minute since we told it to charge or
                     # since the last significant change in the car's actual
