@@ -446,12 +446,6 @@ class TWCSlave:
             if self.lastAmpsOffered == 0 and self.reportedAmpsActual > 4.0:
                 now = time.time()
 
-                print("I want to stop charging")
-
-                print("now - self.timeLastAmpsOfferedChanged < 60: " + str(now - self.timeLastAmpsOfferedChanged < 60))
-                print("now - self.timeReportedAmpsActualChangedSignificantly: " + str(now - self.timeReportedAmpsActualChangedSignificantly))
-                print("now - self.timeReportedAmpsActualChangedSignificantly < self.startStopDelay: " + str(now - self.timeReportedAmpsActualChangedSignificantly < self.startStopDelay))
-                print("self.reportedAmpsActual < 4.0: " + str(self.reportedAmpsActual < 4.0))
                 if (
                     now - self.timeLastAmpsOfferedChanged < 60
                     or now - self.timeReportedAmpsActualChangedSignificantly
@@ -459,7 +453,6 @@ class TWCSlave:
                     or self.reportedAmpsActual < 4.0
                 ):
 
-                    print("dont stopping charging")
                     # We want to tell the car to stop charging. However, it's
                     # been less than a minute since we told it to charge or
                     # since the last significant change in the car's actual
