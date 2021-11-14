@@ -580,7 +580,7 @@ class TWCMaster:
         if offset > 0:
             consumptionVal += offset
 
-        consumptionVal += self.getOverProduction()
+        consumptionVal += self.getGeneration()
 
         return float(consumptionVal)
 
