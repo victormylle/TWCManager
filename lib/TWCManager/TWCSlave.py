@@ -449,7 +449,7 @@ class TWCSlave:
                 print("I want to stop charging")
 
                 print("now - self.timeLastAmpsOfferedChanged < 60: " + str(now - self.timeLastAmpsOfferedChanged < 60))
-                print("now - self.timeReportedAmpsActualChangedSignificantly": + str(now - self.timeReportedAmpsActualChangedSignificantly))
+                print("now - self.timeReportedAmpsActualChangedSignificantly: " + str(now - self.timeReportedAmpsActualChangedSignificantly))
                 print("now - self.timeReportedAmpsActualChangedSignificantly < self.startStopDelay: " + str(now - self.timeReportedAmpsActualChangedSignificantly < self.startStopDelay))
                 print("self.reportedAmpsActual < 4.0: " + str(self.reportedAmpsActual < 4.0))
                 if (
