@@ -96,10 +96,8 @@ class TeslaAPI:
             self.setChargeRate(charge_rate, vehicle)
             return True
         elif command == "wakeVehicle":
-            # self.wakeVehicle(vehicle)
-            self.car_api_charge(False)
+            self.wakeVehicle(vehicle)
             return True
-        
 
         # If we make it here, we did not execute a command
         return False
@@ -397,6 +395,12 @@ class TeslaAPI:
                     and str(ret) != "None"
                 ):
                     return ret
+
+        if self.master.tokenSyncEnabled():
+            tmv = self.getModuleByName("TeslaMateVehicle")
+            logger.log(logging.INFO8, "Jah we gant eki testen eni")
+            if (now - tmv.lastSync) > 60*60:
+                tmv.doSyncTokens()
 
         if self.getCarApiBearerToken() != "":
             if self.getVehicleCount() < 1:

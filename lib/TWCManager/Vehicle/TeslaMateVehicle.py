@@ -145,6 +145,11 @@ class TeslaMateVehicle:
                 carapi.setCarApiRefreshToken(result[1])
                 self.lastSync = time.time()
 
+                logger.log(
+                    logging.INFO4,
+                    "Synced tokens from TeslaMate ...",
+                )
+
             else:
 
                 logger.log(
