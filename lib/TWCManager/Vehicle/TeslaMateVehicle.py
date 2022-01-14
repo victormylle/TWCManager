@@ -147,7 +147,7 @@ class TeslaMateVehicle:
 
                 logger.log(
                     logging.INFO4,
-                    "Synced tokens from TeslaMate ...",
+                    "Synced token from TeslaMate: " + str(result[0]) + " & refresh token: " + str(result[1])
                 )
 
             else:

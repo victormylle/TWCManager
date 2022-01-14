@@ -405,6 +405,7 @@ class TeslaAPI:
         if self.getCarApiBearerToken() != "":
             if self.getVehicleCount() < 1:
                 url = "https://owner-api.teslamotors.com/api/1/vehicles"
+                logger.log(logging.INFO8, "using token: " + str(self.getCarApiBearerToken()))
                 headers = {
                     "accept": "application/json",
                     "Authorization": "Bearer " + self.getCarApiBearerToken(),
