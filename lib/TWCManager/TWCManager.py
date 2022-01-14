@@ -342,6 +342,9 @@ def check_green_energy():
     for module in master.getModulesByType("EMS"):
         master.setConsumption(module["name"], module["ref"].getConsumption())
         master.setGeneration(module["name"], module["ref"].getGeneration())
+        if (module["name"] == "HASS"):
+            if module["ref"].hassEntityOverProduction: 
+                master.setOverProduction(module["name"], module["ref"].getOverProduction())
 
     # Set max amps iff charge_amps isn't specified on the policy.
     if master.getModuleByName("Policy").policyIsGreen():
@@ -362,7 +365,7 @@ def update_statuses():
         othwatts = 0
 
         if config["config"]["subtractChargerLoad"]:
-            if conwatts > 0:
+            if conwatts + genwatts > 0:
                 othwatts = conwatts - chgwatts
 
             if conoffset > 0:

@@ -96,8 +96,10 @@ class TeslaAPI:
             self.setChargeRate(charge_rate, vehicle)
             return True
         elif command == "wakeVehicle":
-            self.wakeVehicle(vehicle)
+            # self.wakeVehicle(vehicle)
+            self.car_api_charge(False)
             return True
+        
 
         # If we make it here, we did not execute a command
         return False
