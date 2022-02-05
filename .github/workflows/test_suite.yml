@@ -5,8 +5,12 @@ on:
 jobs:
   twcmanager-python3_4_direct:
     name: Python 3.4 - Run Direct
-    runs-on: [ "self-hosted", "python3.4.10" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.4.10
+      options: --user root
     steps:
+
       - name: "Checkout Repository"
         uses: actions/checkout@v2
 
@@ -31,7 +35,10 @@ jobs:
 
   twcmanager-python3_4_service:
     name: Python 3.4 - Run as a Service
-    runs-on: [ "self-hosted", "python3.4.10" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.4.10
+      options: --user root
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v2
@@ -57,7 +64,10 @@ jobs:
 
   twcmanager-python3_5_direct:
     name: Python 3.5 - Run Direct
-    runs-on: [ "self-hosted", "python3.5.3" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.5.3
+      options: --user root
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v2
@@ -83,7 +93,10 @@ jobs:
 
   twcmanager-python3_5_service:
     name: Python 3.5 - Run as a Service
-    runs-on: [ "self-hosted", "python3.5.3" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.5.3
+      options: --user root
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v2
@@ -109,7 +122,10 @@ jobs:
 
   twcmanager-python3_6_direct:
     name: Python 3.6 - Run Direct
-    runs-on: [ "self-hosted", "python3.6.13" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.6.13
+      options: --user root
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v2
@@ -135,7 +151,10 @@ jobs:
 
   twcmanager-python3_6_service:
     name: Python 3.6 - Run as a Service
-    runs-on: [ "self-hosted", "python3.6.13" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.6.13
+      options: --user root
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v2
@@ -161,7 +180,10 @@ jobs:
 
   twcmanager-python3_7_direct:
     name: Python 3.7 - Run Direct
-    runs-on: [ "self-hosted", "python3.7.10" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.7.10
+      options: --user root
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v2
@@ -184,7 +206,10 @@ jobs:
 
   twcmanager-python3_7_service:
     name: Python 3.7 - Run as a Service
-    runs-on: [ "self-hosted", "python3.7.10" ]
+    runs-on: [ "self-hosted", "build_host" ]
+    container:
+      image: twcmanager/twcmanager-testsuite:py3.7.10
+      options: --user root
     steps:
       - name: "Checkout Repository"
         uses: actions/checkout@v2

@@ -89,6 +89,7 @@ modules_available = [
     "Control.MQTTControl",
     #    "Control.OCPPControl",
     "EMS.Efergy",
+    "EMS.EmonCMS",
     "EMS.Enphase",
     "EMS.Fronius",
     "EMS.Growatt",
@@ -105,6 +106,7 @@ modules_available = [
     "EMS.TeslaPowerwall2",
     "EMS.TED",
     "EMS.Volkszahler",
+    "EMS.URL",
     "Status.HASSStatus",
     "Status.MQTTStatus",
 ]

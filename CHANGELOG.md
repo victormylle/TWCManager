@@ -11,6 +11,7 @@ This document logs the changes per release of TWCManager.
       * (@ngardiner) - Align web interface TWCID so that it is lowercase, avoiding issues with JavaScript and Jinja2 misalignment
       * (@ngardiner) - Change cryptography module dependency to avoid versions requiring rust compiler
       * (@ngardiner) - Add logic to set token expiry time when manually adding tokens
+      * (@blach) - Fix Tesla API token refresh logic
  * (@MikeBishop) - Change to Powerwall Auth handling to expire auth tokens earlier due to changes in Powerwall auth handling
  * (@ngardiner) - Add version check to Web UI
  * (@ngardiner) - Add handling of recaptcha challenge (with DNS workaround), and provide other options if this is not possible
@@ -18,6 +19,9 @@ This document logs the changes per release of TWCManager.
  * (@ngardiner) - Added TeslaMate sync functionality to allow sync of telemetry and API token details
  * (@MikeBishop) - Restrict dampening to green policies only, and prefer to keep charging vs stop/start
  * (@ngardiner) - Reduce potential Tesla API backoff time
+ * (@deece) - Addition of Open Energy Monitor EMS module
+ * (@dehsgr) - Addition of URL EMS module
+ * (@tjikkun) - Set HASS sensor state class to make it work with statistics dashboard
 
 ## v1.2.3 - 2021-08-10
 
