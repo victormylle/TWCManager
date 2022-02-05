@@ -68,7 +68,7 @@ class TeslaMateVehicle:
             self.doSyncTokens(True)
 
             # After initial sync, set a timer to continue to sync the tokens every hour
-            resync = threading.Timer(3600, self.doSyncTokens)
+            resync = threading.Timer(60*5, self.doSyncTokens)
 
         if self.syncTelemetry:
             # We delay collecting TeslaMate telemetry for a short period

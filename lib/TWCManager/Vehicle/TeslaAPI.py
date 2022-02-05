@@ -396,11 +396,11 @@ class TeslaAPI:
                 ):
                     return ret
 
-        if self.master.tokenSyncEnabled():
-            tmv = self.master.getModuleByName("TeslaMateVehicle")
-            logger.log(logging.INFO8, "Jah we gant eki testen eni")
-            if (now - tmv.lastSync) > 60*60:
-                tmv.doSyncTokens()
+        # if self.master.tokenSyncEnabled():
+        #     tmv = self.master.getModuleByName("TeslaMateVehicle")
+        #     logger.log(logging.INFO8, "Jah we gant eki testen eni")
+        #     if (now - tmv.lastSync) > 60*60:
+        #         tmv.doSyncTokens()
 
         if self.getCarApiBearerToken() != "":
             if self.getVehicleCount() < 1:
