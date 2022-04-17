@@ -1,19 +1,21 @@
 #! /usr/bin/python3
 
-from TWCManager.TWCSlave import TWCSlave
-from datetime import datetime, timedelta
+import bisect
 import json
 import logging
+import math
 import os.path
 import queue
-from sys import modules
+import random
 import threading
 import time
-from ww import f
-import math
-import random
+from datetime import datetime, timedelta
+from sys import modules
+
 import requests
-import bisect
+from ww import f
+
+from TWCManager.TWCSlave import TWCSlave
 
 logger = logging.getLogger("\u26FD Master")
 
@@ -580,7 +582,7 @@ class TWCMaster:
         if offset > 0:
             consumptionVal += offset
 
-        consumptionVal += self.getGeneration()
+        # consumptionVal += self.getGeneration()
 
         return float(consumptionVal)
 
