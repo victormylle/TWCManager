@@ -1,6 +1,5 @@
 import logging
 import time
-from ww import f
 
 
 logger = logging.getLogger("\u26FD Policy")
@@ -47,7 +46,7 @@ class Policy:
             "name": "Track Green Energy",
             "match": ["tm_hour", "tm_hour", "settings.hourResumeTrackGreenEnergy"],
             "condition": ["gte", "lt", "lte"],
-            "value": [6, 20, "tm_hour"],
+            "value": ["settings.sunrise", "settings.sunset", "tm_hour"],
             "background_task": "checkGreenEnergy",
             "allowed_flex": "config.greenEnergyFlexAmps",
             "charge_limit": "settings.chargePolicyLimits.trackgreenenergy",
@@ -122,6 +121,11 @@ class Policy:
                 for (name, position) in [("after", 3), ("before", 1), ("emergency", 0)]:
                     self.charge_policy[position:position] = config_extend.get(
                         name, [])
+
+            if config_policy.get("alwaysPollEMS", False):
+                for policy in self.charge_policy:
+                    if policy.get("background_task", None) is None:
+                        policy["background_task"] = "checkGreenEnergy"
 
             # Set the Policy Check Interval if specified
             policy_engine = config_policy.get("engine")
@@ -256,6 +260,25 @@ class Policy:
                 return policy
         return None
 
+    def getActivePolicyAction(self):
+        # getActivePolicyAction returns an integer value depending on what
+        # charging action the currently active policy is following. Values
+        # correspond to nonScheduledAction values in settings.json:
+        # 1 ... fixed rate charging
+        # 2 ... do not charge
+        # 3 ... track green energy charging
+        # <None> will be returned if self.active_policy is not (yet) set
+        if self.active_policy == None:
+            return None
+        if self.policyIsGreen():
+            return 3
+        else:
+            policy = self.getPolicyByName(self.active_policy)
+            if int(self.policyValue(policy.get("charge_amps", 0))) > 0:
+                return 1
+            else:
+                return 2
+
     def policyValue(self, value):
         # policyValue is a macro to allow charging policy to refer to things
         # such as EMS module values or settings. This allows us to control
@@ -322,9 +345,7 @@ class Policy:
 
         logger.log(
             logging.INFO8,
-            f(
-                "Evaluating Policy match (%s [{matchValue}]), condition (%s), value (%s)"
-            ),
+            f"Evaluating Policy match (%s [{matchValue}]), condition (%s), value (%s)",
             match,
             condition,
             value,

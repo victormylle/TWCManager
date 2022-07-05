@@ -8,19 +8,17 @@ import requests
 from threading import Thread
 import time
 from urllib.parse import parse_qs
-from ww import f
 
 logger = logging.getLogger("\U0001F697 TeslaAPI")
 
 
 class TeslaAPI:
 
-    __apiCaptcha = None
-    __apiCaptchaCode = None
-    __apiCaptchaInterface = None
-    __authURL = "https://auth.tesla.com/oauth2/v3/authorize"
-    callbackURL = "https://auth.tesla.com/void/callback"
-    captchaURL = "https://auth.tesla.com/captcha"
+    __apiChallenge = None
+    __apiVerifier = None
+    __apiState = None
+    __authURL = "https://auth.tesla.com/oauth2/v3/token"
+    __callbackURL = "https://auth.tesla.com/void/callback"
     carApiLastErrorTime = 0
     carApiBearerToken = ""
     carApiRefreshToken = ""
@@ -44,7 +42,6 @@ class TeslaAPI:
     refreshURL = "https://auth.tesla.com/oauth2/v3/token"
     __resp = None
     session = None
-    verifier = ""
 
     # Transient errors are ones that usually disappear if we retry the car API
     # command a minute or less later.
@@ -71,6 +68,8 @@ class TeslaAPI:
             )
         except KeyError:
             pass
+
+        self.generateChallenge()
 
     def addVehicle(self, json):
         self.carApiVehicles.append(CarApiVehicle(json, self, self.config))
@@ -102,190 +101,6 @@ class TeslaAPI:
         # If we make it here, we did not execute a command
         return False
 
-    def apiLogin(self, email, password):
-
-        # Populate auth details for Phase 1
-        self.__email = email
-        self.__password = password
-
-        for attempt in range(self.maxLoginRetries):
-
-            self.verifier = base64.urlsafe_b64encode(os.urandom(86)).rstrip(b"=")
-            challenge = base64.urlsafe_b64encode(
-                hashlib.sha256(self.verifier).digest()
-            ).rstrip(b"=")
-            state = (
-                base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode("utf-8")
-            )
-
-            self.params = (
-                ("client_id", "ownerapi"),
-                ("code_challenge", challenge),
-                ("code_challenge_method", "S256"),
-                ("redirect_uri", self.callbackURL),
-                ("response_type", "code"),
-                ("scope", "openid email offline_access"),
-                ("state", state),
-            )
-
-            self.session = requests.Session()
-            self.__resp = self.session.get(self.__authURL, params=self.params)
-
-            if self.__resp.ok and "<title>" in self.__resp.text:
-                logger.log(
-                    logging.INFO6,
-                    "Tesla Auth form fetch success, attempt: " + str(attempt),
-                )
-
-                if 'img data-id="captcha"' in self.__resp.text:
-                    logger.log(
-                        logging.INFO6,
-                        "Tesla Auth form challenged us for Captcha. Redirecting.",
-                    )
-                    self.getApiCaptcha()
-                    return "Phase1Captcha"
-                elif "g-recaptcha" in self.__resp.text:
-                    logger.log(
-                        logging.INFO6,
-                        "Tesla Auth form challenged us for Google Recaptcha. Redirecting.",
-                    )
-                    return "Phase1Recaptcha"
-                else:
-                    return self.apiLoginPhaseOne()
-            else:
-                logger.log(
-                    logging.INFO6,
-                    "Tesla auth form fetch failed, attempt: " + str(attempt),
-                )
-
-            time.sleep(3)
-        else:
-            logger.log(
-                logging.INFO2,
-                "Wasn't able to find authentication form after "
-                + str(attempt)
-                + " attempts",
-            )
-            return "Phase1Error"
-
-    def apiLoginPhaseOne(self):
-
-        # Picks up on the first phase of authentication, after redirecting to
-        # handle Captcha if this was requested, or directly if we were lucky
-        # enough not to be challenged.
-
-        csrf = re.search(r'name="_csrf".+value="([^"]+)"', self.__resp.text).group(1)
-        transaction_id = re.search(
-            r'name="transaction_id".+value="([^"]+)"', self.__resp.text
-        ).group(1)
-
-        if not csrf or not transaction_id:
-            # These two parameters are required for Phase 1 (Authentication) auth
-            # If they are missing, we raise an appropriate error to the user's attention
-            return "Phase1Error"
-
-        data = {
-            "_csrf": csrf,
-            "_phase": "authenticate",
-            "_process": "1",
-            "transaction_id": transaction_id,
-            "cancel": "",
-            "identity": self.__email,
-            "credential": self.__password,
-        }
-
-        # If a captcha code is stored, inject it into the data parameter
-        if self.__apiCaptchaCode and self.__apiCaptchaInterface == "captcha":
-            data["captcha"] = self.__apiCaptchaCode
-
-            # Clear captcha data
-            self.__apiCaptcha = None
-
-        elif self.__apiCaptchaCode and self.__apiCaptchaInterface == "recaptcha":
-            data["recaptcha"] = self.__apiCaptchaCode
-            data["g-recaptcha-response"] = self.__apiCaptchaCode
-
-        # Clear stored credentials
-        self.__email = None
-        self.__password = None
-
-        # Call login Phase 2
-        return self.apiLoginPhaseTwo(data)
-
-    def apiLoginPhaseTwo(self, data):
-
-        for attempt in range(self.maxLoginRetries):
-            resp = self.session.post(
-                self.__authURL, params=self.params, data=data, allow_redirects=False
-            )
-            if resp.ok and (resp.status_code == 302 or "<title>" in resp.text):
-                logger.log(
-                    logging.INFO2,
-                    "Posted auth form successfully after " + str(attempt) + " attempts",
-                )
-                break
-            time.sleep(3)
-        else:
-            logger.log(
-                logging.INFO2,
-                "Wasn't able to post authentication form after "
-                + str(attempt)
-                + " attempts",
-            )
-            return "Phase2Error"
-
-        if resp.status_code == 200 and "/mfa/verify" in resp.text:
-            # This account is using MFA, redirect to MFA code entry page
-            return "MFA/" + str(data["transaction_id"])
-
-        try:
-            code = parse_qs(resp.headers["location"])[self.callbackURL + "?code"]
-        except KeyError:
-            return "Phase2ErrorTip"
-
-        data = {
-            "grant_type": "authorization_code",
-            "client_id": "ownerapi",
-            "code_verifier": self.verifier.decode("utf-8"),
-            "code": code,
-            "redirect_uri": self.callbackURL,
-        }
-
-        resp = self.session.post("https://auth.tesla.com/oauth2/v3/token", json=data)
-        access_token = resp.json()["access_token"]
-
-        headers = {"authorization": "bearer " + access_token}
-
-        data = {
-            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "client_id": self.clientID,
-        }
-        resp = self.session.post(
-            "https://owner-api.teslamotors.com/oauth/token", headers=headers, json=data
-        )
-        try:
-            self.setCarApiBearerToken(resp.json()["access_token"])
-            self.setCarApiRefreshToken(resp.json()["refresh_token"])
-            self.setCarApiTokenExpireTime(time.time() + resp.json()["expires_in"])
-            self.master.queue_background_task({"cmd": "saveSettings"})
-            return True
-
-        except KeyError:
-            logger.log(
-                logging.INFO2,
-                "ERROR: Can't access Tesla car via API.  Please log in again via web interface.",
-            )
-            self.updateCarApiLastErrorTime()
-            # In addition to setting carApiLastErrorTime, erase tokens to
-            # prevent further authorization attempts until user enters password
-            # on web interface. I feel this is safer than trying to log in every
-            # ten minutes with a bad token because Tesla might decide to block
-            # remote access to your car after too many authorization errors.
-            self.setCarApiBearerToken("")
-            self.setCarApiRefreshToken("")
-            self.master.queue_background_task({"cmd": "saveSettings"})
-            return False
-
     def apiRefresh(self):
         # Refresh tokens expire in 45
         # days when first issued, so we'll get a new token every 15 days.
@@ -303,10 +118,16 @@ class TeslaAPI:
             logger.log(logging.INFO2, "Car API request" + str(req))
             apiResponseDict = json.loads(req.text)
         except requests.exceptions.RequestException:
+            logger.log(
+                logging.INFO2, "Request Exception parsing API Token Refresh Response"
+            )
             pass
         except ValueError:
             pass
         except json.decoder.JSONDecodeError:
+            logger.log(
+                logging.INFO2, "JSON Decode Error parsing API Token Refresh Response"
+            )
             pass
 
         try:
@@ -331,6 +152,8 @@ class TeslaAPI:
             self.setCarApiBearerToken("")
             self.setCarApiRefreshToken("")
             self.master.queue_background_task({"cmd": "saveSettings"})
+        except UnboundLocalError:
+            pass
 
     def car_api_available(
         self, email=None, password=None, charge=None, applyLimit=None
@@ -681,6 +504,22 @@ class TeslaAPI:
 
         return True
 
+    def generateChallenge(self):
+        self.__apiVerifier = base64.urlsafe_b64encode(os.urandom(86)).rstrip(b"=")
+        self.__apiChallenge = base64.urlsafe_b64encode(
+            hashlib.sha256(self.__apiVerifier).digest()
+        ).rstrip(b"=")
+        self.__apiState = (
+            base64.urlsafe_b64encode(os.urandom(16)).rstrip(b"=").decode("utf-8")
+        )
+
+    def getApiChallenge(self):
+        return (
+            self.__apiChallenge.decode("UTF-8"),
+            self.__apiState,
+            self.__apiVerifier,
+        )
+
     def is_location_home(self, lat, lon):
 
         if self.master.getHomeLatLon()[0] == 10000:
@@ -695,6 +534,7 @@ class TeslaAPI:
             self.master.setHomeLat(lat)
             self.master.setHomeLon(lon)
             self.master.queue_background_task({"cmd": "saveSettings"})
+            self.master.queue_background_task({"cmd": "sunrise"})
             return True
 
         # 1 lat or lon = ~364488.888 feet. The exact feet is different depending
@@ -711,9 +551,15 @@ class TeslaAPI:
         # also reports the car is not at its usual address.  I suspect this
         # is another case of a bug that's been causing car GPS to freeze  the
         # last couple months.
+        # Desired maximum destination from home is now configurable. As the
+        # parameter may not be set, we catch the key error and use the default
+        # value documented above.
+        atHomeRadius = (
+            1 / 364488.888 * float(self.config["config"].get("atHomeRadius", 10560))
+        )
         if (
-            abs(self.master.getHomeLatLon()[0] - lat) > 0.0289
-            or abs(self.master.getHomeLatLon()[1] - lon) > 0.0289
+            abs(self.master.getHomeLatLon()[0] - lat) > atHomeRadius
+            or abs(self.master.getHomeLatLon()[1] - lon) > atHomeRadius
         ):
             return False
 
@@ -778,33 +624,28 @@ class TeslaAPI:
             # more than once per minute.
             self.updateLastStartOrStopChargeTime()
 
-            if (
-                self.config["config"]["onlyChargeMultiCarsAtHome"]
-                and self.getVehicleCount() > 1
-            ):
-                # When multiple cars are enrolled in the car API, only start/stop
-                # charging cars parked at home.
+            # only start/stop charging cars parked at home.
 
-                if vehicle.update_location() is False:
-                    result = "error"
-                    continue
+            if vehicle.update_location() is False:
+                result = "error"
+                continue
 
-                if not vehicle.atHome:
-                    # Vehicle is not at home, so don't change its charge state.
-                    logger.info(
-                        vehicle.name
-                        + " is not at home.  Do not "
-                        + startOrStop
-                        + " charge."
-                    )
-                    continue
+            if not vehicle.atHome:
+                # Vehicle is not at home, so don't change its charge state.
+                logger.info(
+                    vehicle.name
+                    + " is not at home.  Do not "
+                    + startOrStop
+                    + " charge."
+                )
+                continue
 
-                # If you send charge_start/stop less than 1 second after calling
-                # update_location(), the charge command usually returns:
-                #   {'response': {'result': False, 'reason': 'could_not_wake_buses'}}
-                # Waiting 2 seconds seems to consistently avoid the error, but let's
-                # wait 5 seconds in case of hardware differences between cars.
-                time.sleep(5)
+            # If you send charge_start/stop less than 1 second after calling
+            # update_location(), the charge command usually returns:
+            #   {'response': {'result': False, 'reason': 'could_not_wake_buses'}}
+            # Waiting 2 seconds seems to consistently avoid the error, but let's
+            # wait 5 seconds in case of hardware differences between cars.
+            time.sleep(5)
 
             if charge:
                 self.applyChargeLimit(self.lastChargeLimitApplied, checkArrival=True)
@@ -872,11 +713,12 @@ class TeslaAPI:
                             self.resetCarApiLastErrorTime(vehicle)
                         elif charge:
                             reason = apiResponseDict["response"]["reason"]
-                            if reason == "complete" or reason == "charging":
+                            if reason in ["complete", "charging", "is_charging", "disconnected"]:
                                 # We asked the car to charge, but it responded that
                                 # it can't, either because it's reached target
                                 # charge state (reason == 'complete'), or it's
-                                # already trying to charge (reason == 'charging').
+                                # already trying to charge (reason == 'charging') or
+                                # it's not connected to a charger (reason == 'charging').
                                 # In these cases, it won't help to keep asking it to
                                 # charge, so set vehicle.stopAskingToStartCharging =
                                 # True.
@@ -886,7 +728,8 @@ class TeslaAPI:
                                 # which car in the list is connected to our TWC.
                                 logger.info(
                                     vehicle.name
-                                    + " is done charging or already trying to charge.  Stop asking to start charging."
+                                    + " is done charging or already trying to charge or not connected to a charger."
+                                    + "  Stop asking to start charging."
                                 )
                                 vehicle.stopAskingToStartCharging = True
                                 self.resetCarApiLastErrorTime(vehicle)
@@ -1032,23 +875,27 @@ class TeslaAPI:
             if vehicle.stopTryingToApplyLimit or not vehicle.ready():
                 continue
 
-            located = vehicle.update_location()
             (wasAtHome, outside, lastApplied) = self.master.getNormalChargeLimit(
                 vehicle.ID
             )
             forgetVehicle = False
-            if not vehicle.update_charge():
-                # We failed to read the "normal" limit; don't risk changing it.
+            if not vehicle.update_charge() or not vehicle.update_location():
+                # We failed to read the "normal" limit or locate the car; don't
+                # risk changing the charge limit yet.
                 continue
 
-            if not wasAtHome and located and vehicle.atHome:
+            if not wasAtHome and not vehicle.atHome:
+                # If the vehicle was away and is still away, nothing to do.
+                continue
+
+            if not wasAtHome and vehicle.atHome:
                 logger.log(logging.INFO2, vehicle.name + " has arrived")
                 outside = vehicle.chargeLimit
-            elif wasAtHome and located and not vehicle.atHome:
+            elif wasAtHome and not vehicle.atHome:
                 logger.log(logging.INFO2, vehicle.name + " has departed")
                 forgetVehicle = True
 
-            if limit == -1 or (located and not vehicle.atHome):
+            if limit == -1 or not vehicle.atHome:
                 # We're removing any applied limit, provided it hasn't been manually changed
                 #
                 # If lastApplied == -1, the manual-change path is always selected.
@@ -1104,24 +951,6 @@ class TeslaAPI:
 
         if checkArrival:
             self.updateChargeAtHome()
-
-    def getApiCaptcha(self):
-        # This will fetch the current Captcha image displayed by Tesla's auth
-        # website, and store it in memory
-
-        self.__apiCaptcha = self.session.get(self.captchaURL)
-
-    def getCaptchaImage(self):
-        # This will serve the Tesla Captcha image
-
-        if self.__apiCaptcha:
-            return self.__apiCaptcha.content
-        else:
-            logger.log(
-                logging.INFO2,
-                "ERROR: Captcha image requested, but we have none buffered. This is likely due to a stale login session, but if you see it regularly, please report it.",
-            )
-            return ""
 
     def getCarApiBearerToken(self):
         return self.carApiBearerToken
@@ -1189,66 +1018,6 @@ class TeslaAPI:
     def getCarApiVehicles(self):
         return self.carApiVehicles
 
-    def getMFADevices(self, transaction_id):
-        # Requests a list of devices we can use for MFA
-        url = f(
-            "https://auth.tesla.com/oauth2/v3/authorize/mfa/factors?transaction_id={transaction_id}"
-        )
-        resp = self.session.get(url)
-        try:
-            content = json.loads(resp.text)
-        except ValueError:
-            return False
-        except json.decoder.JSONDecodeError:
-            return False
-
-        if resp.status_code == 200:
-            return content["data"]
-        elif resp.status_code == 400:
-            logger.error(
-                "The following error was returned when attempting to fetch MFA devices for Tesla Login:"
-                + str(content.get("error", ""))
-            )
-        else:
-            logger.error(
-                "An unexpected error code ("
-                + str(resp.status)
-                + ") was returned when attempting to fetch MFA devices for Tesla Login"
-            )
-
-    def mfaLogin(self, transactionID, mfaDevice, mfaCode):
-        data = {
-            "transaction_id": transactionID,
-            "factor_id": mfaDevice,
-            "passcode": str(mfaCode).rjust(6, "0"),
-        }
-        url = "https://auth.tesla.com/oauth2/v3/authorize/mfa/verify"
-        resp = self.session.post(url, json=data)
-
-        try:
-            jsonData = json.loads(resp.text)
-        except ValueError:
-            return False
-        except json.decoder.JSONDecodeError:
-            return False
-
-        if (
-            "error" in resp.text
-            or not jsonData.get("data", None)
-            or not jsonData["data"].get("approved", None)
-            or not jsonData["data"].get("valid", None)
-        ):
-            if (
-                jsonData.get("error", {}).get("message", None)
-                == "Invalid Attributes: Your passcode should be six digits."
-            ):
-                return "TokenLengthError"
-            else:
-                return "TokenFail"
-        else:
-            data = {"transaction_id": transactionID}
-            return self.apiLoginPhaseTwo(data)
-
     def resetCarApiLastErrorTime(self, vehicle=None):
         self.carApiLastErrorTime = 0
         if vehicle:
@@ -1257,10 +1026,67 @@ class TeslaAPI:
         self.errorCount = 0
         return True
 
+    def saveApiToken(self, url):
+        # Extract code from url
+        if isinstance(url, bytes):
+            url = url.decode("UTF-8")
+        code = re.search(r"code=(.+)&state=(.+)", url)
+
+        logger.log(logging.INFO2, "Code: " + code.group(1))
+        logger.log(logging.INFO2, "State: " + code.group(2))
+
+        # Exchange auth code for bearer token
+        headers = {"accept": "application/json", "Content-Type": "application/json"}
+        data = {
+            "client_id": "ownerapi",
+            "grant_type": "authorization_code",
+            "code": str(code.group(1)),
+            "code_verifier": self.__apiVerifier.decode("UTF-8"),
+            "redirect_uri": self.__callbackURL,
+        }
+        req = None
+        now = time.time()
+        try:
+            req = requests.post(self.__authURL, headers=headers, json=data)
+            logger.log(logging.INFO2, "Car API request" + str(req))
+            apiResponseDict = json.loads(req.text)
+        except requests.exceptions.RequestException:
+            logger.error("Request Exception parsing API Token Exchange Response")
+            pass
+        except ValueError:
+            pass
+        except json.decoder.JSONDecodeError:
+            logger.error("JSON Decode Error parsing API Token Exchange Response")
+            pass
+
+        params = json.loads(req.text)
+
+        # Check for errors
+        if "error" in params:
+            return params["error"]
+
+        if "access_token" in params:
+            try:
+                self.setCarApiBearerToken(params["access_token"])
+                self.setCarApiRefreshToken(params["refresh_token"])
+                self.setCarApiTokenExpireTime(time.time() + params["expires_in"])
+                self.master.queue_background_task({"cmd": "saveSettings"})
+                return "success"
+            except KeyError:
+                logger.log(
+                    logging.INFO2,
+                    "ERROR: Can't access Tesla car via API.  Please log in again via web interface.",
+                )
+                self.updateCarApiLastErrorTime()
+                return "response_no_token"
+
+        logger.log(logging.INFO2, str(req))
+        logger.log(logging.INFO2, req.text)
+
+        return "unknown"
+
     def setCarApiBearerToken(self, token=None):
         if token:
-            # TODO: Should not be hardcoded
-            tokenSync = False
             if self.master.tokenSyncEnabled():
                 # We won't accept tokens if Token Sync is already in place
                 return False
@@ -1308,11 +1134,6 @@ class TeslaAPI:
             return False
 
         return apiResponseDict
-
-    def submitCaptchaCode(self, code, interface):
-        self.__apiCaptchaCode = code
-        self.__apiCaptchaInterface = interface
-        return self.apiLoginPhaseOne()
 
     def updateCarApiLastErrorTime(self, vehicle=None):
         timestamp = time.time()

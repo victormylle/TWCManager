@@ -1,9 +1,10 @@
-import logging
-import psycopg2
-import paho.mqtt.client as mqtt
 import _thread
+import logging
 import threading
 import time
+
+import paho.mqtt.client as mqtt
+import psycopg2
 
 logger = logging.getLogger("\U0001F697 TeslaMate")
 
@@ -68,7 +69,7 @@ class TeslaMateVehicle:
             self.doSyncTokens(True)
 
             # After initial sync, set a timer to continue to sync the tokens every hour
-            resync = threading.Timer(60*5, self.doSyncTokens)
+            resync = threading.Timer(60 * 5, self.doSyncTokens)
 
         if self.syncTelemetry:
             # We delay collecting TeslaMate telemetry for a short period
@@ -153,7 +154,10 @@ class TeslaMateVehicle:
 
                 logger.log(
                     logging.INFO4,
-                    "Synced token from TeslaMate: " + str(result[0]) + " & refresh token: " + str(result[1])
+                    "Synced token from TeslaMate: "
+                    + str(result[0])
+                    + " & refresh token: "
+                    + str(result[1]),
                 )
 
             else:
@@ -229,7 +233,7 @@ class TeslaMateVehicle:
 
             elif topic[3] == "time_to_full_charge":
                 if self.vehicles.get(topic[2], None):
-                    self.vehicles[topic[2]].timeToFullCharge = float(payload)
+                    self.vehicles[topic[2]].timeToFullCharge = int(float(payload))
                     self.vehicles[topic[2]].lastChargeStatusTime = time.time()
                     self.vehicles[topic[2]].syncTimestamp = time.time()
 

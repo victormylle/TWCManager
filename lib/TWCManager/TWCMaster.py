@@ -9,8 +9,6 @@ import queue
 import random
 import threading
 import time
-from datetime import datetime, timedelta
-from sys import modules
 
 import requests
 from ww import f
@@ -71,7 +69,7 @@ class TWCMaster:
     teslaLoginAskLater = False
     TWCID = None
     updateVersion = False
-    version = "1.2.4"
+    version = "1.3.0"
 
     # TWCs send a seemingly-random byte after their 2-byte TWC id in a number of
     # messages. I call this byte their "Sign" for lack of a better term. The byte
@@ -631,8 +629,8 @@ class TWCMaster:
         # Returns Lat/Lon coordinates to check if car location is
         # at home
         latlon = [10000, 10000]
-        latlon[0] = self.settings.get("homeLat", 10000)
-        latlon[1] = self.settings.get("homeLon", 10000)
+        latlon[0] = float(self.settings.get("homeLat", 10000))
+        latlon[1] = float(self.settings.get("homeLon", 10000))
         return latlon
 
     def getMasterHeartbeatOverride(self):
@@ -650,7 +648,7 @@ class TWCMaster:
         # consumption.
 
         currentOffer = max(
-            self.getMaxAmpsToDivideAmongSlaves(),
+            int(self.getMaxAmpsToDivideAmongSlaves()),
             self.num_cars_charging_now() * self.config["config"]["minAmpsPerTWC"],
         )
         newOffer = currentOffer + self.convertWattsToAmps(generationW - consumptionW)
@@ -671,6 +669,10 @@ class TWCMaster:
             result = self.settings["chargeLimits"][str(ID)]
             if type(result) is int:
                 result = (result, 0)
+            if result[0] is None:
+                result[0] = 0
+            if result[1] is None:
+                result[1] = 0
             return (True, result[0], result[1])
         return (False, None, None)
 
@@ -698,7 +700,9 @@ class TWCMaster:
 
     def getVoltageMeasurement(self):
         slavesWithVoltage = [
-            slave for slave in self.getSlaveTWCs() if slave.voltsPhaseA > 0
+            slave
+            for slave in self.getSlaveTWCs()
+            if (slave.voltsPhaseA > 0 or slave.voltsPhaseB > 0 or slave.voltsPhaseC > 0)
         ]
         if len(slavesWithVoltage) == 0:
             # No slaves support returning voltage
@@ -709,28 +713,35 @@ class TWCMaster:
 
         total = 0
         phases = 0
-        if any([slave.voltsPhaseC > 0 for slave in slavesWithVoltage]):
-            # Three-phase system
-            phases = 3
-            if all([slave.voltsPhaseC > 0 for slave in slavesWithVoltage]):
-                total = sum(
-                    [
-                        (slave.voltsPhaseA + slave.voltsPhaseB + slave.voltsPhaseC)
-                        for slave in slavesWithVoltage
-                    ]
-                )
+
+        # Detect number of active phases
+        for slave in slavesWithVoltage:
+            localPhases = 0
+            if slave.voltsPhaseA:
+                localPhases += 1
+            if slave.voltsPhaseB:
+                localPhases += 1
+            if slave.voltsPhaseC:
+                localPhases += 1
+
+            if phases:
+                if localPhases != phases:
+                    logger.info(
+                        "FATAL:  Mix of multi-phase TWC configurations not currently supported."
+                    )
+                    return (
+                        self.config["config"].get("defaultVoltage", 240),
+                        self.config["config"].get("numberOfPhases", 1),
+                    )
             else:
-                logger.info(
-                    "FATAL:  Mix of three-phase and single-phase not currently supported."
-                )
-                return (
-                    self.config["config"].get("defaultVoltage", 240),
-                    self.config["config"].get("numberOfPhases", 1),
-                )
-        else:
-            # Single-phase system
-            total = sum([slave.voltsPhaseA for slave in slavesWithVoltage])
-            phases = 1
+                phases = localPhases
+
+        total = sum(
+            [
+                (slave.voltsPhaseA + slave.voltsPhaseB + slave.voltsPhaseC)
+                for slave in slavesWithVoltage
+            ]
+        )
 
         return (total / (phases * len(slavesWithVoltage)), phases)
 
@@ -792,6 +803,11 @@ class TWCMaster:
                 "Built-in": 1,
                 "Members": [],
             }
+        # Fill in old defaults as bridge
+        if not self.settings.get("sunrise", None):
+            self.settings["sunrise"] = 6
+        if not self.settings.get("sunset", None):
+            self.settings["sunset"] = 20
 
     def master_id_conflict(self):
         # We're playing fake slave, and we got a message from a master with our TWCID.
