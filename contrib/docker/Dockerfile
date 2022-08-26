@@ -1,4 +1,4 @@
-FROM debian:buster
+FROM debian:bullseye
 RUN apt-get -y update && apt-get -y install build-essential ca-certificates gfortran git lsb-release make python3 python3-pip libatlas-base-dev
 RUN cd /usr/src && git clone https://github.com/ngardiner/TWCManager
 
@@ -8,8 +8,7 @@ RUN cd /usr/src/TWCManager && make docker SUDO=""
 VOLUME /etc/twcmanager
 WORKDIR /usr/src/TWCManager
 
-COPY entrypoint.sh ./entrypoint.sh
-ENTRYPOINT ["./entrypoint.sh"]
+ENTRYPOINT ["./contrib/docker/entrypoint.sh"]
 CMD ["/usr/bin/python3","-m","TWCManager"]
 
 # SSL_CERTIFICATE_FAILED errors

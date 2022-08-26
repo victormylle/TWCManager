@@ -1543,6 +1543,6 @@ class TWCMaster:
         num <<= 1
         if bit:
             num |= 1
-        num &= 2 ** bits - 1
+        num &= 2**bits - 1
 
         return num
