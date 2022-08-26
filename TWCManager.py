@@ -30,5 +30,5 @@ if "." in sys.path:
 
 if os.path.dirname(os.path.realpath(__file__)) in sys.path:
     sys.path.remove(os.path.dirname(os.path.realpath(__file__)))
-    
+
 import TWCManager.TWCManager

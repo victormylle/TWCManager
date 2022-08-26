@@ -49,10 +49,12 @@ class HASS:
         self.serverPort = self.configHASS.get("serverPort", 8123)
         self.useHttps = self.configHASS.get("useHttps", False)
         self.apiKey = self.configHASS.get("apiKey", None)
-        
+
         self.hassEntityConsumption = self.configHASS.get("hassEntityConsumption", None)
         self.hassEntityGeneration = self.configHASS.get("hassEntityGeneration", None)
-        self.hassEntityOverProduction = self.configHASS.get("hassEntityOverProduction", None)
+        self.hassEntityOverProduction = self.configHASS.get(
+            "hassEntityOverProduction", None
+        )
 
         # Unload if this module is disabled or misconfigured
         if (not self.status) or (not self.serverIP) or (int(self.serverPort) < 1):
@@ -168,7 +170,7 @@ class HASS:
                     logger.debug("getGeneration fetch failed, using cached values")
             else:
                 logger.debug("Generation Entity Not Supplied. Not Querying")
-            
+
             if self.hassEntityOverProduction:
                 apivalue = self.getAPIValue(self.hassEntityOverProduction)
                 if self.fetchFailed is not True:

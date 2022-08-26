@@ -119,8 +119,7 @@ class Policy:
                 #   Before - Inserted after Charge Now
                 #   Emergency - Inserted at the beginning
                 for (name, position) in [("after", 3), ("before", 1), ("emergency", 0)]:
-                    self.charge_policy[position:position] = config_extend.get(
-                        name, [])
+                    self.charge_policy[position:position] = config_extend.get(name, [])
 
             if config_policy.get("alwaysPollEMS", False):
                 for policy in self.charge_policy:
@@ -131,8 +130,7 @@ class Policy:
             policy_engine = config_policy.get("engine")
             if policy_engine:
                 if policy_engine.get("policyCheckInterval"):
-                    self.policyCheckInterval = policy_engine.get(
-                        "policyCheckInterval")
+                    self.policyCheckInterval = policy_engine.get("policyCheckInterval")
 
     def applyPolicyImmediately(self):
         self.lastPolicyCheck = 0
@@ -181,8 +179,7 @@ class Policy:
                 # Now, finish processing
                 return
             else:
-                logger.log(logging.INFO8,
-                           "Policy conditions were not matched.")
+                logger.log(logging.INFO8, "Policy conditions were not matched.")
                 continue
 
         # No policy has matched; keep the current policy
@@ -213,12 +210,10 @@ class Policy:
                 self.master.setMaxAmpsToDivideAmongSlaves(
                     self.policyValue(policy["charge_amps"])
                 )
-                logger.debug("Charge at %.2f" %
-                             self.policyValue(policy["charge_amps"]))
+                logger.debug("Charge at %.2f" % self.policyValue(policy["charge_amps"]))
 
         # Set flex, if any
-        self.master.setAllowedFlex(
-            self.policyValue(policy.get("allowed_flex", 0)))
+        self.master.setAllowedFlex(self.policyValue(policy.get("allowed_flex", 0)))
 
         # If a background task is defined for this policy, queue it
         bgt = policy.get("background_task", None)
@@ -235,16 +230,14 @@ class Policy:
         limit = int(float(self.policyValue(policy.get("charge_limit", -1))))
         if self.limitOverride:
             currentCharge = (
-                self.master.getModuleByName(
-                    "TeslaAPI").minBatteryLevelAtHome - 1
+                self.master.getModuleByName("TeslaAPI").minBatteryLevelAtHome - 1
             )
             if currentCharge < 50:
                 currentCharge = 50
             limit = currentCharge if limit == -1 else min(limit, currentCharge)
         if not (limit >= 50 and limit <= 100):
             limit = -1
-        self.master.queue_background_task(
-            {"cmd": "applyChargeLimit", "limit": limit})
+        self.master.queue_background_task({"cmd": "applyChargeLimit", "limit": limit})
 
         # Report current policy via Status modules
         for module in self.master.getModulesByType("Status"):
@@ -261,8 +254,7 @@ class Policy:
         if policy:
             url = policy.get("webhooks", {}).get(hook, None)
             if url:
-                self.master.queue_background_task(
-                    {"cmd": "webhook", "url": url})
+                self.master.queue_background_task({"cmd": "webhook", "url": url})
 
     def getPolicyByName(self, name):
         for policy in self.charge_policy:
