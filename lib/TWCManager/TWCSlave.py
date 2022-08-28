@@ -444,7 +444,7 @@ class TWCSlave:
         if self.protocolVersion == 2:
             # TODO: Start and stop charging using protocol 2 commands to TWC
             # instead of car api if I ever figure out how.
-        
+
             if self.lastAmpsOffered == 0 and self.reportedAmpsActual > 4.0:
                 now = time.time()
 
