@@ -4,10 +4,11 @@ import json
 import logging
 import os
 import re
-import requests
-from threading import Thread
 import time
+from threading import Thread
 from urllib.parse import parse_qs
+
+import requests
 
 logger = logging.getLogger("\U0001F697 TeslaAPI")
 
@@ -219,32 +220,40 @@ class TeslaAPI:
                 ):
                     return ret
 
-        # if self.master.tokenSyncEnabled():
-        #     tmv = self.master.getModuleByName("TeslaMateVehicle")
-        #     logger.log(logging.INFO8, "Jah we gant eki testen eni")
-        #     if (now - tmv.lastSync) > 60*60:
-        #         tmv.doSyncTokens()
-
         if self.getCarApiBearerToken() != "":
             if self.getVehicleCount() < 1:
                 url = "https://owner-api.teslamotors.com/api/1/vehicles"
-                logger.log(logging.INFO8, "using token: " + str(self.getCarApiBearerToken()))
+                logger.log(
+                    logging.INFO8, "using token: " + str(self.getCarApiBearerToken())
+                )
                 headers = {
                     "accept": "application/json",
                     "Authorization": "Bearer " + self.getCarApiBearerToken(),
                 }
-                try:
-                    req = requests.get(url, headers=headers)
-                    logger.log(logging.INFO8, "Car API cmd vehicles " + str(req))
-                    apiResponseDict = json.loads(req.text)
-                except requests.exceptions.RequestException:
-                    logger.info("Failed to make API call " + url)
-                    logger.log(logging.INFO6, "Response: " + req.text)
-                    pass
-                except json.decoder.JSONDecodeError:
-                    logger.info("Could not parse JSON result from " + url)
-                    logger.log(logging.INFO6, "Response: " + req.text)
-                    pass
+
+                tries = 0
+                while tries < 2:
+                    try:
+                        req = requests.get(url, headers=headers)
+                        logger.log(logging.INFO8, "Car API cmd vehicles " + str(req))
+                        apiResponseDict = json.loads(req.text)
+                    except requests.exceptions.RequestException:
+                        logger.info("Failed to make API call " + url)
+                        logger.log(logging.INFO6, "Response: " + req.text)
+                        # try to sync the tokens and try again
+                        if self.master.tokenSyncEnabled():
+                            tries += 1
+                            tmv = self.master.getModuleByName("TeslaMateVehicle")
+                            tmv.doSyncTokens()
+                        pass
+                    except json.decoder.JSONDecodeError:
+                        logger.info("Could not parse JSON result from " + url)
+                        logger.log(logging.INFO6, "Response: " + req.text)
+                        if self.master.tokenSyncEnabled():
+                            tries += 1
+                            tmv = self.master.getModuleByName("TeslaMateVehicle")
+                            tmv.doSyncTokens()
+                        pass
 
                 try:
                     logger.debug("Car API vehicle list" + str(apiResponseDict) + "\n")
