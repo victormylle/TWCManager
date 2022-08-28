@@ -237,6 +237,7 @@ class TeslaAPI:
                         req = requests.get(url, headers=headers)
                         logger.log(logging.INFO8, "Car API cmd vehicles " + str(req))
                         apiResponseDict = json.loads(req.text)
+                        tries = 2
                     except requests.exceptions.RequestException:
                         logger.info("Failed to make API call " + url)
                         logger.log(logging.INFO6, "Response: " + req.text)
