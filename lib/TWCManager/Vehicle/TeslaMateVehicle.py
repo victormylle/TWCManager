@@ -64,6 +64,10 @@ class TeslaMateVehicle:
         self.syncTelemetry = self.__configTeslaMate.get("syncTelemetry", False)
         self.syncTokens = self.__configTeslaMate.get("syncTokens", False)
 
+        # If we're set to sync the auth tokens from the database, do this at startup
+        if self.syncTokens:
+            self.doSyncTokens(True)
+
         if self.syncTelemetry:
             # We delay collecting TeslaMate telemetry for a short period
             # This gives the TeslaAPI module time to connect to the Tesla API
