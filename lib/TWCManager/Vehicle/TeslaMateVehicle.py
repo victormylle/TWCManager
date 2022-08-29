@@ -68,6 +68,9 @@ class TeslaMateVehicle:
         if self.syncTokens:
             self.doSyncTokens(True)
 
+            resync = threading.Timer(60, self.doSyncTokens)
+            resync.start()
+
         if self.syncTelemetry:
             # We delay collecting TeslaMate telemetry for a short period
             # This gives the TeslaAPI module time to connect to the Tesla API

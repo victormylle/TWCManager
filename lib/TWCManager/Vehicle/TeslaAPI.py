@@ -231,30 +231,18 @@ class TeslaAPI:
                     "Authorization": "Bearer " + self.getCarApiBearerToken(),
                 }
 
-                tries = 0
-                while tries < 2:
-                    try:
-                        req = requests.get(url, headers=headers)
-                        logger.log(logging.INFO8, "Car API cmd vehicles " + str(req))
-                        apiResponseDict = json.loads(req.text)
-                        tries = 2
-                    except requests.exceptions.RequestException:
-                        logger.info("Failed to make API call " + url)
-                        logger.log(logging.INFO6, "Response: " + req.text)
-                        # try to sync the tokens and try again
-                        if self.master.tokenSyncEnabled():
-                            tries += 1
-                            tmv = self.master.getModuleByName("TeslaMateVehicle")
-                            tmv.doSyncTokens()
-                        pass
-                    except json.decoder.JSONDecodeError:
-                        logger.info("Could not parse JSON result from " + url)
-                        logger.log(logging.INFO6, "Response: " + req.text)
-                        if self.master.tokenSyncEnabled():
-                            tries += 1
-                            tmv = self.master.getModuleByName("TeslaMateVehicle")
-                            tmv.doSyncTokens()
-                        pass
+                try:
+                    req = requests.get(url, headers=headers)
+                    logger.log(logging.INFO8, "Car API cmd vehicles " + str(req))
+                    apiResponseDict = json.loads(req.text)
+                except requests.exceptions.RequestException:
+                    logger.info("Failed to make API call " + url)
+                    logger.log(logging.INFO6, "Response: " + req.text)
+                    pass
+                except json.decoder.JSONDecodeError:
+                    logger.info("Could not parse JSON result from " + url)
+                    logger.log(logging.INFO6, "Response: " + req.text)
+                    pass
 
                 try:
                     logger.debug("Car API vehicle list" + str(apiResponseDict) + "\n")
